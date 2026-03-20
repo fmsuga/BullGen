@@ -1409,11 +1409,7 @@ function renderRout() {
         </div>
         <button class="btn-new-rout" onclick="showNewRoutineModal()">Nueva rutina</button>
       </div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button class="btn-data" onclick="exportData()">↓ Exportar backup</button>
-        <button class="btn-data" onclick="document.getElementById('import-input').click()">↑ Importar backup</button>
-        <input type="file" id="import-input" accept=".json" style="display:none" onchange="importData(this)">
-      </div>
+
       ${rout?.startDate ? `
       <div class="rout-3m-bar">
         <span class="r3m-label">Ciclo 3 meses</span>
