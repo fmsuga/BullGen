@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>GymTrack</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+/* =====================================================
+   DESIGN TOKENS
+   Usamos CSS custom properties (variables) para centralizar
+   todos los valores de color, tipografía y espaciado.
+   Ventaja: cambiar el tema completo modificando un solo lugar.
+===================================================== */
+:root {
+  --bg:       #0d0d0d;
+  --bg2:      #161616;
+  --bg3:      #1f1f1f;
+  --bg4:      #2a2a2a;
+  --line:     #252525;
+  --line2:    #333;
+  --t1:       #f2f2f2;
+  --t2:       #888;
+  --t3:       #444;
+  --acc:      #c8f135;   /* amarillo-verde: alta visibilidad sobre fondo oscuro */
+  --acc-dk:   #9abe1e;
+  --blue:     #4d8ef0;
+  --red:      #f05050;
+  --green:    #3fd68a;
+  --orange:   #f0a030;
+  --sans: 'Space Grotesk', sans-serif;
+  --mono: 'Space Mono', monospace;
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+}
+
+/* =====================================================
+   RESET Y BASE
+   * { box-sizing: border-box } es el reset más importante
+   en CSS moderno: hace que padding y border se incluyan
+   dentro del width declarado, no se sumen por fuera.
+===================================================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body {
+  background: var(--bg);
+  color: var(--t1);
+  font-family: var(--sans);
+  height: 100%;
+  /* overflow:hidden en body + scroll en las pantallas internas
+     evita el "bounce" de Safari en iOS y da más control */
+  overflow: hidden;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* =====================================================
+   LAYOUT PRINCIPAL
+   Usamos flexbox column para que el nav quede siempre
+   abajo y el área de contenido ocupe todo el espacio restante.
+   min-height: 0 en .screens es un hack necesario: sin él,
+   un hijo flex no puede ser más pequeño que su contenido.
+===================================================== */
+.app { display: flex; flex-direction: column; height: 100dvh; max-width: 430px; margin: 0 auto; position: relative; }
+.screens { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+.screen { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; display: none; -webkit-overflow-scrolling: touch; }
+.screen.on { display: block; }
+
+/* =====================================================
+   NAVEGACIÓN INFERIOR
+   padding-bottom: env(safe-area-inset-bottom) respeta
+   el "notch" de iPhone en la parte inferior (home indicator).
+===================================================== */
+.nav {
+  display: flex;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.nb {
+  flex: 1; padding: 10px 4px 8px;
+  background: none; border: none;
+  color: var(--t3);
+  font-family: var(--sans); font-size: 9px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase;
+  cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  transition: color .15s;
+}
+.nb svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.nb.on { color: var(--acc); }
+
+/* =====================================================
+   PANTALLA DE ENTRENAMIENTO — VISTA PRINCIPAL
+   Esta es la pantalla crítica. El principio de diseño es
+   "una sola cosa en foco". Todo el espacio se destina al
+   ejercicio actual. Nada compite por atención.
+===================================================== */
+
+/* Estado: sin sesión activa — selector de día */
+.day-pick { padding: 0 16px 100px; }
+.dp-header { padding: 24px 0 20px; }
+.dp-title { font-size: 28px; font-weight: 700; line-height: 1; }
+.dp-sub { font-size: 13px; color: var(--t2); margin-top: 6px; }
+.day-card {
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.day-card:active { background: var(--bg3); border-color: var(--acc); }
+.day-card.done-today { border-color: var(--green); }
+.dc-left .dc-name { font-size: 17px; font-weight: 600; }
+.dc-left .dc-muscle { font-size: 12px; color: var(--t2); margin-top: 3px; }
+.dc-left .dc-count { font-size: 11px; color: var(--t3); margin-top: 6px; font-family: var(--mono); }
+.dc-done { font-size: 11px; color: var(--green); font-weight: 600; letter-spacing: .05em; }
+.dc-arrow { font-size: 20px; color: var(--t3); }
+
+/* Estado: sesión activa — vista de ejercicio */
+.train-view {
+  display: flex; flex-direction: column;
+  height: 100%;
+  padding: 0;
+}
+.tv-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.tv-day { font-size: 12px; font-weight: 600; color: var(--t2); letter-spacing: .05em; }
+.tv-elapsed { font-family: var(--mono); font-size: 12px; color: var(--t3); }
+.tv-progress-bar {
+  height: 2px; background: var(--line);
+  flex-shrink: 0;
+}
+.tv-progress-fill {
+  height: 100%; background: var(--acc);
+  transition: width .4s ease;
+}
+
+/* El cuerpo central del ejercicio — ocupa todo el espacio disponible */
+.tv-body {
+  flex: 1; min-height: 0;
+  overflow-y: auto;
+  padding: 28px 24px 20px;
+  display: flex; flex-direction: column;
+}
+
+/* Número de ejercicio y progreso */
+.ex-counter {
+  font-family: var(--mono); font-size: 11px; color: var(--t3);
+  letter-spacing: .1em; text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.ex-counter .cur-n { color: var(--acc); font-size: 13px; }
+
+/* Nombre del ejercicio — el dato más importante, el más grande */
+.ex-name-main {
+  font-size: 32px; font-weight: 700; line-height: 1.1;
+  margin-bottom: 6px;
+  /* Permite que nombres largos se partan bien */
+  word-break: break-word;
+}
+.ex-muscle-tag {
+  display: inline-block;
+  font-size: 10px; font-weight: 600;
+  background: var(--bg3); color: var(--t2);
+  padding: 3px 9px; border-radius: 20px;
+  letter-spacing: .07em; text-transform: uppercase;
+  margin-bottom: 20px;
+}
+.ss-badge {
+  display: inline-block;
+  font-size: 10px; font-weight: 700;
+  background: rgba(77,142,240,.15); color: var(--blue);
+  padding: 3px 9px; border-radius: 20px;
+  letter-spacing: .07em; margin-left: 6px;
+}
+
+/* Series: mostramos todas las series del ejercicio */
+.series-strip {
+  display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap;
+}
+.serie-dot {
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1.5px solid var(--line2);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11px; color: var(--t3);
+  transition: all .2s;
+  cursor: default;
+}
+.serie-dot.done { background: var(--acc); border-color: var(--acc); color: #000; font-weight: 700; }
+.serie-dot.current { border-color: var(--acc); color: var(--acc); box-shadow: 0 0 0 3px rgba(200,241,53,.12); }
+
+/* Serie actual — el bloque prominente */
+.current-series-block {
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  border-radius: var(--r-xl);
+  padding: 20px 20px 16px;
+  margin-bottom: 14px;
+}
+.csb-label { font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .1em; font-family: var(--mono); margin-bottom: 12px; }
+.csb-reps-obj {
+  font-size: 48px; font-weight: 700; line-height: 1;
+  font-family: var(--mono); color: var(--t1);
+  margin-bottom: 4px;
+}
+.csb-reps-label { font-size: 12px; color: var(--t2); margin-bottom: 16px; }
+
+/* Peso anterior — el segundo dato clave */
+.prev-weight-block {
+  display: flex; align-items: baseline; gap: 6px;
+}
+.pw-label { font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .08em; }
+.pw-value {
+  font-family: var(--mono); font-size: 36px; font-weight: 700; color: var(--acc);
+  line-height: 1;
+}
+.pw-unit { font-size: 14px; color: var(--t2); }
+.pw-source { font-size: 10px; color: var(--t3); margin-left: auto; align-self: flex-end; }
+
+/* Superserie: el segundo ejercicio */
+.ss-divider {
+  text-align: center; font-size: 10px; color: var(--blue); font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  padding: 10px 0; margin-bottom: 2px;
+  display: flex; align-items: center; gap: 8px;
+}
+.ss-divider::before, .ss-divider::after {
+  content: ''; flex: 1; height: 1px; background: rgba(77,142,240,.25);
+}
+.ss-second-block {
+  background: rgba(77,142,240,.06);
+  border: 1px solid rgba(77,142,240,.2);
+  border-radius: var(--r-xl);
+  padding: 20px 20px 16px;
+  margin-bottom: 14px;
+}
+
+/* Descripción colapsable */
+.desc-toggle {
+  font-size: 12px; color: var(--t3); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 0; margin-bottom: 10px;
+  border: none; background: none; font-family: var(--sans);
+  text-decoration: underline; text-decoration-style: dotted;
+}
+.desc-text { font-size: 13px; color: var(--t2); line-height: 1.6; margin-bottom: 12px; display: none; }
+.desc-text.open { display: block; }
+
+/* Botón principal de acción */
+.btn-series-done {
+  width: 100%; padding: 18px;
+  background: var(--acc); color: #000;
+  border: none; border-radius: var(--r-lg);
+  font-family: var(--sans); font-size: 17px; font-weight: 700;
+  cursor: pointer; letter-spacing: .01em;
+  transition: transform .1s, opacity .1s;
+  margin-top: auto;
+}
+.btn-series-done:active { transform: scale(.97); opacity: .9; }
+.btn-series-done.last { background: var(--green); }
+
+.tv-footer {
+  padding: 10px 20px 16px;
+  display: flex; gap: 8px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+}
+.btn-rest {
+  flex: 1; padding: 13px;
+  background: var(--bg2); color: var(--t2);
+  border: 1px solid var(--line2); border-radius: var(--r-md);
+  font-family: var(--sans); font-size: 14px; cursor: pointer;
+}
+.btn-end-sess {
+  flex: 1; padding: 13px;
+  background: var(--bg2); color: var(--t2);
+  border: 1px solid var(--line2); border-radius: var(--r-md);
+  font-family: var(--sans); font-size: 14px; cursor: pointer;
+}
+
+/* =====================================================
+   BOTTOM SHEET — registro de serie
+   Usamos un panel que sube desde abajo (translateY).
+   Es el patrón estándar en mobile para acciones secundarias:
+   no rompe el contexto visual de lo que estaba viendo.
+===================================================== */
+.sheet-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.75);
+  z-index: 100;
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+}
+.sheet-overlay.open { opacity: 1; pointer-events: all; }
+.sheet {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%) translateY(100%);
+  width: 100%; max-width: 430px;
+  background: var(--bg2);
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid var(--line2);
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  z-index: 101;
+  transition: transform .3s cubic-bezier(.4,0,.2,1);
+}
+.sheet.open { transform: translateX(-50%) translateY(0); }
+.sheet-handle {
+  width: 36px; height: 4px;
+  background: var(--line2); border-radius: 2px;
+  margin: 0 auto 20px;
+}
+.sheet-title { font-size: 16px; font-weight: 600; margin-bottom: 18px; }
+.sheet-row { display: flex; gap: 10px; margin-bottom: 14px; }
+.sheet-field { flex: 1; }
+.sf-label { font-size: 10px; color: var(--t3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; display: block; }
+.sf-input {
+  width: 100%;
+  background: var(--bg3); border: 1px solid var(--line2);
+  border-radius: var(--r-sm);
+  color: var(--t1); font-family: var(--mono); font-size: 20px; font-weight: 700;
+  text-align: center; padding: 12px 8px;
+  transition: border-color .2s;
+  -webkit-appearance: none;
+}
+.sf-input:focus { outline: none; border-color: var(--acc); }
+.sf-check { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.sf-check-box {
+  width: 22px; height: 22px; border-radius: 6px;
+  border: 1.5px solid var(--line2); background: var(--bg3);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .15s; flex-shrink: 0;
+}
+.sf-check-box.on { background: var(--red); border-color: var(--red); }
+.sf-check-box svg { width: 12px; height: 12px; stroke: #fff; fill: none; stroke-width: 3; stroke-linecap: round; display: none; }
+.sf-check-box.on svg { display: block; }
+.sf-check-label { font-size: 14px; color: var(--t2); }
+.sf-rpe-row { display: flex; gap: 5px; flex-wrap: wrap; }
+.rpe-btn {
+  flex: 1; min-width: 28px; padding: 8px 4px;
+  background: var(--bg3); border: 1px solid var(--line2);
+  border-radius: var(--r-sm); color: var(--t2);
+  font-family: var(--mono); font-size: 12px; cursor: pointer;
+  transition: all .15s; text-align: center;
+}
+.rpe-btn.sel { background: var(--acc); border-color: var(--acc); color: #000; font-weight: 700; }
+.sheet-note {
+  width: 100%; background: var(--bg3); border: 1px solid var(--line2);
+  border-radius: var(--r-sm); color: var(--t2);
+  font-family: var(--sans); font-size: 14px;
+  padding: 10px 12px; resize: none; height: 44px;
+  transition: height .2s, border-color .2s;
+  margin-bottom: 14px;
+}
+.sheet-note:focus { outline: none; border-color: var(--acc); height: 72px; }
+.btn-confirm {
+  width: 100%; padding: 16px;
+  background: var(--acc); color: #000;
+  border: none; border-radius: var(--r-md);
+  font-family: var(--sans); font-size: 16px; font-weight: 700;
+  cursor: pointer;
+}
+
+/* =====================================================
+   TIMER FLOTANTE
+   position: fixed sobre todo el contenido.
+   Usamos transform para animarlo (GPU, no repaint).
+===================================================== */
+.timer-pill {
+  position: fixed;
+  top: env(safe-area-inset-top, 16px);
+  left: 50%; transform: translateX(-50%) translateY(-80px);
+  width: calc(min(390px, 100vw) - 32px);
+  background: var(--bg3);
+  border: 1px solid var(--line2);
+  border-radius: 50px;
+  padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px;
+  z-index: 90;
+  transition: transform .3s cubic-bezier(.4,0,.2,1);
+}
+.timer-pill.show { transform: translateX(-50%) translateY(0); }
+.timer-num {
+  font-family: var(--mono); font-size: 22px; font-weight: 700;
+  min-width: 56px; transition: color .3s;
+}
+.tc-ok { color: var(--acc); }
+.tc-warn { color: var(--orange); }
+.tc-end { color: var(--red); }
+.timer-lbl { font-size: 11px; color: var(--t2); flex: 1; }
+.t-add { padding: 5px 10px; background: var(--bg4); border: 1px solid var(--line2); border-radius: 20px; color: var(--t2); font-size: 11px; cursor: pointer; font-family: var(--sans); }
+.t-skip { padding: 5px 10px; background: none; border: none; color: var(--t3); font-size: 11px; cursor: pointer; font-family: var(--sans); }
+
+/* =====================================================
+   PANTALLA DE PROGRESO
+===================================================== */
+.prog-wrap { padding: 0 0 100px; }
+.prog-header { padding: 24px 20px 16px; border-bottom: 1px solid var(--line); }
+.ph-title { font-size: 26px; font-weight: 700; }
+.ph-sub { font-size: 12px; color: var(--t2); margin-top: 4px; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 16px; }
+.stat-c {
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 14px 14px 12px;
+}
+.stat-v { font-family: var(--mono); font-size: 24px; font-weight: 700; color: var(--acc); }
+.stat-l { font-size: 10px; color: var(--t3); margin-top: 4px; text-transform: uppercase; letter-spacing: .08em; }
+.sec-label { font-size: 10px; font-weight: 700; color: var(--t3); text-transform: uppercase; letter-spacing: .1em; padding: 8px 20px 6px; }
+.ex-sel-wrap { padding: 0 16px 8px; }
+.ex-sel {
+  width: 100%; background: var(--bg2); border: 1px solid var(--line2);
+  border-radius: var(--r-sm); color: var(--t1);
+  font-size: 14px; padding: 10px 12px;
+  font-family: var(--sans); appearance: none;
+}
+.chart-wrap { height: 200px; padding: 0 16px 16px; position: relative; }
+.sess-list { padding: 0 14px; }
+.sess-c {
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: var(--r-md); padding: 13px 14px; margin-bottom: 8px;
+}
+.sess-date { font-family: var(--mono); font-size: 10px; color: var(--t3); }
+.sess-row { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+.sess-inf { font-size: 13px; color: var(--t2); }
+.sess-inf b { color: var(--t1); font-weight: 600; }
+.pr-badge {
+  font-size: 9px; font-weight: 700;
+  background: rgba(200,241,53,.12); color: var(--acc);
+  padding: 2px 7px; border-radius: 10px; letter-spacing: .06em;
+}
+
+/* =====================================================
+   PANTALLA DE RUTINAS
+===================================================== */
+.rout-wrap { padding: 0 0 100px; }
+.rout-header { padding: 24px 20px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: flex-start; }
+.rh-name { font-size: 26px; font-weight: 700; }
+.rh-sub { font-size: 12px; color: var(--t2); margin-top: 4px; }
+.btn-add-ex { padding: 9px 16px; background: var(--acc); color: #000; border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: var(--sans); white-space: nowrap; }
+.day-block { margin: 10px 14px 0; background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.day-blk-head { padding: 13px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: var(--bg3); }
+.dbh-name { font-size: 14px; font-weight: 600; }
+.dbh-count { font-size: 11px; color: var(--t3); }
+.r-ex-list { padding: 4px 0; }
+.r-ex-row { padding: 9px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+.r-ex-row:last-child { border-bottom: none; }
+.r-ex-info { flex: 1; }
+.r-ex-name { font-size: 14px; font-weight: 500; }
+.r-ex-detail { font-size: 10px; color: var(--t3); margin-top: 2px; font-family: var(--mono); }
+.r-ex-acts { display: flex; gap: 5px; }
+.ib { width: 30px; height: 30px; border-radius: var(--r-sm); border: 1px solid var(--line2); background: none; color: var(--t3); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .15s; }
+.ib svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ib:hover { color: var(--t1); border-color: var(--line2); }
+.ib.del:hover { color: var(--red); border-color: var(--red); }
+
+/* =====================================================
+   MODAL (formularios)
+   Igual concepto que el bottom sheet pero para formularios
+   con más campos que necesitan scroll propio.
+===================================================== */
+.modal-ov { position: fixed; inset: 0; background: rgba(0,0,0,.88); z-index: 200; display: none; align-items: flex-end; justify-content: center; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.modal-ov.open { display: flex; }
+.modal-c { background: var(--bg2); border-radius: 22px 22px 0 0; border: 1px solid var(--line2); border-bottom: none; width: 100%; max-width: 430px; padding: 20px 18px; max-height: 88vh; overflow-y: auto; }
+.m-title { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+.fg { margin-bottom: 12px; }
+.fl { font-size: 10px; color: var(--t3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; display: block; font-weight: 600; }
+.fi { width: 100%; background: var(--bg3); border: 1px solid var(--line2); border-radius: var(--r-sm); color: var(--t1); font-size: 15px; padding: 10px 12px; font-family: var(--sans); transition: border-color .2s; appearance: none; }
+.fi:focus { outline: none; border-color: var(--acc); }
+.frow { display: grid; gap: 8px; }
+.ma { display: flex; gap: 8px; margin-top: 18px; }
+.mb-p { flex: 1; padding: 14px; background: var(--acc); color: #000; border: none; border-radius: var(--r-md); font-size: 16px; font-weight: 700; cursor: pointer; font-family: var(--sans); }
+.mb-s { padding: 14px 18px; background: var(--bg3); color: var(--t2); border: 1px solid var(--line2); border-radius: var(--r-md); font-size: 16px; cursor: pointer; font-family: var(--sans); }
+
+/* Sesión completa */
+.sc-wrap { padding: 40px 24px; text-align: center; }
+.sc-icon { font-size: 52px; margin-bottom: 14px; }
+.sc-title { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+.sc-sub { font-size: 14px; color: var(--t2); margin-bottom: 24px; }
+.sc-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 28px; }
+.scs { background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 6px; }
+.scs-v { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--acc); }
+.scs-l { font-size: 10px; color: var(--t3); margin-top: 4px; text-transform: uppercase; letter-spacing: .07em; }
+.btn-back { width: 100%; padding: 16px; background: var(--acc); color: #000; border: none; border-radius: var(--r-md); font-size: 16px; font-weight: 700; cursor: pointer; font-family: var(--sans); }
+
+.empty-state { text-align: center; padding: 48px 24px; color: var(--t3); font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="screens">
+    <div id="s-train" class="screen on"></div>
+    <div id="s-prog"  class="screen"></div>
+    <div id="s-rout"  class="screen"></div>
+  </div>
+  <nav class="nav">
+    <button class="nb on" id="nb-train" onclick="go('train')">
+      <svg viewBox="0 0 24 24"><path d="M6.5 6.5h11M6.5 17.5h11M3 12h18"/></svg>Entrenar
+    </button>
+    <button class="nb" id="nb-prog" onclick="go('prog')">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Progreso
+    </button>
+    <button class="nb" id="nb-rout" onclick="go('rout')">
+      <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Rutinas
+    </button>
+  </nav>
+</div>
+
+<!-- TIMER FLOTANTE -->
+<div id="timer-pill" class="timer-pill">
+  <div id="timer-num" class="timer-num tc-ok">2:00</div>
+  <div class="timer-lbl">descanso</div>
+  <button class="t-add" onclick="addTime(30)">+30s</button>
+  <button class="t-add" onclick="addTime(60)">+1min</button>
+  <button class="t-skip" onclick="skipTimer()">saltar</button>
+</div>
+
+<!-- BOTTOM SHEET: registro de serie -->
+<div id="sheet-ov" class="sheet-overlay" onclick="closeSheet()"></div>
+<div id="sheet" class="sheet">
+  <div class="sheet-handle"></div>
+  <div id="sheet-inner"></div>
+</div>
+
+<!-- MODAL: formularios -->
+<div id="modal" class="modal-ov" onclick="if(event.target===this)closeModal()">
+  <div class="modal-c" id="mc"></div>
+</div>
+
+<script>
+/* =====================================================
+   BASE DE DATOS LOCAL
+   Todo vive en localStorage como JSON.
+   La función ldb() (load db) intenta parsear; si falla
+   o no existe, devuelve la estructura por defecto.
+   sdb() (save db) serializa a JSON y guarda.
+   
+   PATRÓN IMPORTANTE: los datos de rutina (qué ejercicios hay)
+   y los datos de sesión (qué pesos se usaron) son estructuras
+   SEPARADAS. Esto es clave: si editás la rutina, el historial
+   no se corrompe. Cada sesión guarda una snapshot de lo que pasó.
+===================================================== */
+const KEY = 'gymtrack_v3';
+function ldb() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || defaultDB(); }
+  catch(e) { return defaultDB(); }
+}
+function sdb() { localStorage.setItem(KEY, JSON.stringify(db)); }
+
+function defaultDB() {
+  return {
+    routines: [{
+      id: 'r1', name: 'Rutina actual', active: true,
+      days: [
+        { id: 'd1', name: 'Lunes', muscle: 'Pecho + Tríceps', exercises: [
+          { id:'e1', name:'Press banca plano',      sets:4, reps:'10/8/6/5', sw:80,  ss:null,  desc:'Agarre ligeramente más ancho que hombros. Bajar controlado hasta el pecho.' },
+          { id:'e2', name:'Press inclinado mancuernas', sets:3, reps:'10/10/8', sw:28, ss:null, desc:'' },
+          { id:'e3', name:'Aperturas mancuernas',   sets:3, reps:'12',       sw:16,  ss:'e4',  desc:'Codos ligeramente flexionados. Bajar hasta sentir estiramiento.' },
+          { id:'e4', name:'Fondos en paralelas',    sets:3, reps:'12',       sw:0,   ss:'e3',  desc:'Peso corporal o con lastre. Inclinar torso al frente para pecho.' },
+          { id:'e5', name:'Extensión tríceps polea',sets:3, reps:'12/12/10', sw:30,  ss:null,  desc:'' },
+        ]},
+        { id: 'd2', name: 'Martes', muscle: 'Espalda + Bíceps', exercises: [
+          { id:'e6', name:'Dominadas',             sets:4, reps:'8/6/6/5',  sw:0,   ss:null,  desc:'Peso corporal. Agarre prono, ancho.' },
+          { id:'e7', name:'Remo con barra',        sets:4, reps:'8/8/6/6',  sw:70,  ss:null,  desc:'' },
+          { id:'e8', name:'Curl barra',            sets:3, reps:'10/10/8',  sw:30,  ss:'e9',  desc:'' },
+          { id:'e9', name:'Curl martillo',         sets:3, reps:'12',       sw:14,  ss:'e8',  desc:'' },
+        ]},
+        { id: 'd3', name: 'Miércoles', muscle: 'Pierna', exercises: [
+          { id:'e10', name:'Sentadilla',            sets:5, reps:'10/8/6/5/5', sw:100, ss:null, desc:'Espalda neutra, rodillas sobre puntas de pies.' },
+          { id:'e11', name:'Prensa',                sets:3, reps:'12/10/8',   sw:140, ss:null, desc:'' },
+          { id:'e12', name:'Extensión cuádriceps',  sets:3, reps:'15',        sw:50,  ss:'e13', desc:'' },
+          { id:'e13', name:'Curl femoral',          sets:3, reps:'15',        sw:40,  ss:'e12', desc:'' },
+          { id:'e14', name:'Pantorrillas sentado',  sets:4, reps:'15',        sw:60,  ss:null, desc:'' },
+        ]},
+        { id: 'd4', name: 'Jueves', muscle: 'Hombros', exercises: [
+          { id:'e15', name:'Press militar',         sets:4, reps:'10/8/6/6', sw:50,  ss:null, desc:'' },
+          { id:'e16', name:'Elevaciones laterales', sets:4, reps:'15',       sw:10,  ss:null, desc:'' },
+          { id:'e17', name:'Pájaro mancuernas',     sets:3, reps:'12',       sw:12,  ss:null, desc:'' },
+        ]},
+        { id: 'd5', name: 'Viernes', muscle: 'Core + Cardio', exercises: [
+          { id:'e18', name:'Plancha',               sets:4, reps:'60s',      sw:0,   ss:null, desc:'' },
+          { id:'e19', name:'Abdominales',           sets:4, reps:'20',       sw:0,   ss:null, desc:'' },
+        ]},
+      ]
+    }],
+    sessions: [],
+    cur: null   // sesión en curso
+  };
+}
+
+let db = ldb();
+
+/* =====================================================
+   ESTADO DE LA UI
+   Variables globales de estado de la app.
+   En frameworks como React esto viviría en useState/store.
+   En vanilla JS lo manejamos explícitamente.
+===================================================== */
+let openDays  = {};           // qué días están expandidos en Rutinas
+let progChart = null;         // instancia de Chart.js (la guardamos para destruirla antes de recrear)
+let timerSecs = 0;
+let timerIv   = null;
+let elapsedIv = null;
+let sessStart = null;
+
+// Estado del flujo de entrenamiento
+let trainState = {
+  exerciseQueue: [],   // lista de ejercicios del día (expandida: superseries juntas)
+  currentExIdx:  0,    // índice del ejercicio actual
+  currentSerieIdx: 0,  // serie actual dentro del ejercicio
+  dayId: null,
+};
+
+// =====================================================
+// NAVEGACIÓN
+// =====================================================
+function go(s) {
+  ['train','prog','rout'].forEach(n => {
+    document.getElementById('s-'+n).classList.toggle('on', n===s);
+    document.getElementById('nb-'+n).classList.toggle('on', n===s);
+  });
+  if (s==='train') renderTrain();
+  if (s==='prog')  renderProg();
+  if (s==='rout')  renderRout();
+}
+
+// =====================================================
+// PANTALLA PRINCIPAL: ENTRENAR
+// =====================================================
+function renderTrain() {
+  const el  = document.getElementById('s-train');
+  const rout = db.routines.find(r => r.active);
+  if (!rout) { el.innerHTML = '<div class="empty-state">Creá una rutina en la sección Rutinas</div>'; return; }
+
+  // Si hay sesión activa, renderizamos el flujo de entrenamiento
+  if (db.cur) {
+    renderTrainActive(el, rout);
+    return;
+  }
+
+  // Sin sesión: selector de días
+  let h = '<div class="day-pick"><div class="dp-header"><div class="dp-title">¿Qué entrenamos?</div>';
+  h += `<div class="dp-sub">${new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</div></div>`;
+  rout.days.forEach(day => {
+    const doneToday = db.sessions.some(s => s.dayId===day.id && isToday(s.date));
+    h += `<div class="day-card ${doneToday?'done-today':''}" onclick="startSession('${rout.id}','${day.id}')">
+      <div class="dc-left">
+        <div class="dc-name">${day.name}</div>
+        <div class="dc-muscle">${day.muscle}</div>
+        <div class="dc-count">${day.exercises.length} ejercicios</div>
+      </div>
+      <div>
+        ${doneToday ? '<div class="dc-done">✓ HECHO</div>' : '<div class="dc-arrow">›</div>'}
+      </div>
+    </div>`;
+  });
+  h += '</div>';
+  el.innerHTML = h;
+}
+
+function renderTrainActive(el, rout) {
+  const day  = rout.days.find(d => d.id === db.cur.dayId);
+  const sess = db.cur;
+
+  /* buildQueue: construye la lista de "bloques" a entrenar.
+     Un bloque puede ser un ejercicio solo, o una superserie (2 juntos).
+     Una superserie se detecta cuando ex.ss apunta al id del compañero.
+     Evitamos duplicar: usamos un Set de ids ya procesados. */
+  if (!trainState.dayId || trainState.dayId !== db.cur.dayId) {
+    buildQueue(day);
+  }
+
+  const totalSeries = trainState.exerciseQueue.reduce((a, blk) => {
+    return a + blk.reduce((b, ex) => b + ex.sets, 0);
+  }, 0);
+  const doneSeries = countDoneSeries(sess);
+  const pct = totalSeries > 0 ? Math.round(doneSeries / totalSeries * 100) : 0;
+
+  const curBlk = trainState.exerciseQueue[trainState.currentExIdx];
+  if (!curBlk) { showSessionComplete(sess, day); return; }
+
+  let h = `<div class="train-view">
+    <div class="tv-header">
+      <div class="tv-day">${day.name} · ${day.muscle}</div>
+      <div class="tv-elapsed" id="elapsed">00:00</div>
+    </div>
+    <div class="tv-progress-bar"><div class="tv-progress-fill" style="width:${pct}%"></div></div>
+    <div class="tv-body">`;
+
+  const blkTotal = trainState.exerciseQueue.length;
+  h += `<div class="ex-counter">Ejercicio <span class="cur-n">${trainState.currentExIdx + 1}</span> de ${blkTotal}</div>`;
+
+  // Renderizamos cada ejercicio del bloque (1 o 2 en superserie)
+  curBlk.forEach((ex, bi) => {
+    const isSecond = bi > 0;
+    const curSerie = trainState.currentSerieIdx;
+    const rA = ex.reps.toString().split('/');
+    const prevW = getPrevWeight(ex.id);
+    const blockClass = isSecond ? 'ss-second-block' : 'current-series-block';
+
+    if (isSecond) {
+      h += `<div class="ss-divider">superserie</div>`;
+    }
+
+    h += `<div class="${blockClass}">
+      <div class="csb-label">Serie ${curSerie + 1} de ${ex.sets}</div>
+      <div class="ex-name-main">${ex.name}</div>`;
+
+    // Puntos de series
+    h += `<div class="series-strip">`;
+    for (let s = 0; s < ex.sets; s++) {
+      const isDone = s < curSerie;
+      const isCur  = s === curSerie;
+      h += `<div class="serie-dot ${isDone?'done':''} ${isCur?'current':''}">${s+1}</div>`;
+    }
+    h += `</div>`;
+
+    // Reps objetivo
+    const repsObj = rA[curSerie] || rA[rA.length-1];
+    h += `<div class="csb-reps-obj">${repsObj}</div>
+      <div class="csb-reps-label">repeticiones</div>
+      <div class="prev-weight-block">
+        <span class="pw-label">Peso</span>
+        <span class="pw-value">${prevW.val}</span>
+        <span class="pw-unit">kg</span>
+        <span class="pw-source">${prevW.src}</span>
+      </div>`;
+
+    if (ex.desc) {
+      h += `<button class="desc-toggle" onclick="toggleDesc('desc-${bi}')">ver técnica</button>
+        <div class="desc-text" id="desc-${bi}">${ex.desc}</div>`;
+    }
+    h += `</div>`; // close block
+  });
+
+  h += `</div>`; // tv-body
+
+  const isLast = trainState.currentExIdx >= trainState.exerciseQueue.length - 1 && trainState.currentSerieIdx >= curBlk[0].sets - 1;
+  h += `<div class="tv-footer">
+    <button class="btn-rest" onclick="startTimer(120)">⏱ Descanso</button>
+    <button class="btn-series-done ${isLast?'last':''}" onclick="openSerieSheet()">
+      ${isLast ? 'Terminar sesión ✓' : 'Serie hecha →'}
+    </button>
+  </div></div>`;
+
+  el.innerHTML = h;
+  if (!sessStart) sessStart = db.cur.t0;
+  startElapsed();
+}
+
+function buildQueue(day) {
+  const exs = day.exercises;
+  const seen = new Set();
+  const queue = [];
+  exs.forEach(ex => {
+    if (seen.has(ex.id)) return;
+    seen.add(ex.id);
+    const pair = ex.ss ? exs.find(e => e.id === ex.ss) : null;
+    if (pair) {
+      seen.add(pair.id);
+      queue.push([ex, pair]); // bloque de 2
+    } else {
+      queue.push([ex]);       // bloque de 1
+    }
+  });
+  trainState.exerciseQueue = queue;
+  trainState.currentExIdx  = 0;
+  trainState.currentSerieIdx = 0;
+  trainState.dayId = day.id;
+}
+
+/* getPrevWeight: busca en el historial de sesiones el último peso
+   usado para este ejercicio. Si no hay historial, devuelve el
+   peso sugerido de la rutina (sw = suggested weight).
+   Esto implementa exactamente lo que pediste: "el peso de la semana pasada". */
+function getPrevWeight(exId) {
+  for (const sess of db.sessions) {
+    const ed = sess.ed?.[exId];
+    if (!ed) continue;
+    // Buscamos el peso máximo de esa sesión para ese ejercicio
+    let maxW = 0;
+    Object.entries(ed).forEach(([k, v]) => {
+      if (k === 'note' || !v || typeof v !== 'object') return;
+      const w = parseFloat(v.w) || 0;
+      if (w > maxW) maxW = w;
+    });
+    if (maxW > 0) return { val: maxW, src: 'última vez' };
+  }
+  // Fallback: peso sugerido de la rutina
+  const rout = db.routines.find(r => r.active);
+  const ex = rout?.days.flatMap(d => d.exercises).find(e => e.id === exId);
+  return { val: ex?.sw || 0, src: 'sugerido' };
+}
+
+function countDoneSeries(sess) {
+  if (!sess?.ed) return 0;
+  let n = 0;
+  Object.values(sess.ed).forEach(ex => {
+    Object.entries(ex || {}).forEach(([k, v]) => {
+      if (k !== 'note' && v && typeof v === 'object') n++;
+    });
+  });
+  return n;
+}
+
+function toggleDesc(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+
+// =====================================================
+// BOTTOM SHEET: registrar serie
+// =====================================================
+let sheetData = {}; // datos temporales del sheet
+
+function openSerieSheet() {
+  const curBlk = trainState.exerciseQueue[trainState.currentExIdx];
+  if (!curBlk) return;
+  const ex = curBlk[0]; // serie principal
+  const rA = ex.reps.toString().split('/');
+  const repsObj = rA[trainState.currentSerieIdx] || rA[rA.length-1];
+  const prevW = getPrevWeight(ex.id);
+
+  sheetData = { w: prevW.val, ra: '', fallo: false, rpe: null, note: '' };
+
+  let h = `<div class="sheet-title">Serie ${trainState.currentSerieIdx + 1} · ${ex.name}</div>`;
+
+  h += `<div class="sheet-row">
+    <div class="sheet-field">
+      <span class="sf-label">Peso usado (kg)</span>
+      <input type="number" class="sf-input" id="sh-w" value="${prevW.val}" min="0" step="2.5"
+        oninput="sheetData.w=parseFloat(this.value)||0">
+    </div>
+    <div class="sheet-field">
+      <span class="sf-label">Reps reales</span>
+      <input type="number" class="sf-input" id="sh-ra" placeholder="${repsObj}" min="0" step="1"
+        oninput="sheetData.ra=parseInt(this.value)||''">
+    </div>
+  </div>`;
+
+  h += `<div class="sheet-row">
+    <div class="sheet-field">
+      <span class="sf-label">Fue al fallo</span>
+      <div class="sf-check" onclick="toggleFallo()">
+        <div class="sf-check-box" id="fallo-box">
+          <svg viewBox="0 0 12 12"><polyline points="2 6 5 9 10 3"/></svg>
+        </div>
+        <span class="sf-check-label">Marcar fallo (F)</span>
+      </div>
+    </div>
+  </div>`;
+
+  h += `<div class="sheet-field" style="margin-bottom:14px">
+    <span class="sf-label">RPE (esfuerzo percibido 1–10)</span>
+    <div class="sf-rpe-row">`;
+  for (let i=1; i<=10; i++) {
+    h += `<button class="rpe-btn" id="rpe-${i}" onclick="setRPE(${i})">${i}</button>`;
+  }
+  h += `</div></div>`;
+
+  h += `<textarea class="sheet-note" id="sh-note" placeholder="Nota opcional sobre esta serie…"
+    oninput="sheetData.note=this.value"></textarea>`;
+
+  const isLast = trainState.currentExIdx >= trainState.exerciseQueue.length - 1
+              && trainState.currentSerieIdx >= curBlk[0].sets - 1;
+  h += `<button class="btn-confirm" onclick="confirmSerie()">${isLast ? 'Finalizar sesión ✓' : 'Confirmar serie →'}</button>`;
+
+  document.getElementById('sheet-inner').innerHTML = h;
+  document.getElementById('sheet-ov').classList.add('open');
+  document.getElementById('sheet').classList.add('open');
+  // Focus automático en el input de peso para agilizar la carga
+  setTimeout(() => document.getElementById('sh-w')?.select(), 350);
+}
+
+function toggleFallo() {
+  sheetData.fallo = !sheetData.fallo;
+  document.getElementById('fallo-box')?.classList.toggle('on', sheetData.fallo);
+}
+
+function setRPE(n) {
+  sheetData.rpe = sheetData.rpe === n ? null : n;
+  document.querySelectorAll('.rpe-btn').forEach(b => b.classList.remove('sel'));
+  if (sheetData.rpe) document.getElementById('rpe-'+n)?.classList.add('sel');
+}
+
+function closeSheet() {
+  document.getElementById('sheet-ov').classList.remove('open');
+  document.getElementById('sheet').classList.remove('open');
+}
+
+function confirmSerie() {
+  /* Guardamos los datos de esta serie en db.cur.ed
+     Estructura: db.cur.ed[exId][serieIdx] = { w, ra, fallo, rpe, note } */
+  if (!db.cur) return;
+  const curBlk = trainState.exerciseQueue[trainState.currentExIdx];
+  const si = trainState.currentSerieIdx;
+  const rA = curBlk[0].reps.toString().split('/');
+
+  curBlk.forEach(ex => {
+    if (!db.cur.ed[ex.id]) db.cur.ed[ex.id] = {};
+    db.cur.ed[ex.id][si] = {
+      w:     sheetData.w,
+      ra:    sheetData.ra || (rA[si] || rA[rA.length-1]),
+      fallo: sheetData.fallo,
+      rpe:   sheetData.rpe,
+    };
+    if (sheetData.note) db.cur.ed[ex.id].note = sheetData.note;
+  });
+
+  // Avanzar: primero intentamos siguiente serie, luego siguiente ejercicio
+  const maxSeries = curBlk[0].sets;
+  if (si + 1 < maxSeries) {
+    trainState.currentSerieIdx++;
+    startTimer(120);
+  } else {
+    // Marca el bloque como completado
+    curBlk.forEach(ex => {
+      if (!db.cur.done) db.cur.done = [];
+      if (!db.cur.done.includes(ex.id)) db.cur.done.push(ex.id);
+    });
+    trainState.currentExIdx++;
+    trainState.currentSerieIdx = 0;
+    if (trainState.currentExIdx < trainState.exerciseQueue.length) {
+      startTimer(120);
+    }
+  }
+
+  sdb();
+  closeSheet();
+  renderTrain();
+}
+
+// =====================================================
+// INICIO Y FIN DE SESIÓN
+// =====================================================
+function startSession(routId, dayId) {
+  sessStart = Date.now();
+  db.cur = { routId, dayId, t0: sessStart, done: [], ed: {} };
+  trainState.dayId = null; // fuerza rebuild de la queue
+  sdb();
+  renderTrain();
+}
+
+function showSessionComplete(sess, day) {
+  clearInterval(elapsedIv);
+  const dur = Math.round((Date.now() - sess.t0) / 60000);
+  const vol = calcVol(sess.ed);
+  const saved = { id:'s'+Date.now(), dayId:sess.dayId, date:new Date().toISOString(),
+    dur, h0:new Date(sess.t0).getHours(), ed:sess.ed, done:sess.done||[], vol };
+  db.sessions.unshift(saved);
+  db.cur = null;
+  sessStart = null;
+  skipTimer();
+  sdb();
+
+  document.getElementById('s-train').innerHTML = `<div class="sc-wrap">
+    <div class="sc-icon">🏆</div>
+    <div class="sc-title">¡Sesión completa!</div>
+    <div class="sc-sub">${day?.name} · ${day?.muscle}</div>
+    <div class="sc-stats">
+      <div class="scs"><div class="scs-v">${dur}</div><div class="scs-l">minutos</div></div>
+      <div class="scs"><div class="scs-v">${saved.done.length}</div><div class="scs-l">ejercicios</div></div>
+      <div class="scs"><div class="scs-v">${(vol/1000).toFixed(1)}t</div><div class="scs-l">volumen</div></div>
+    </div>
+    <button class="btn-back" onclick="trainState.dayId=null;renderTrain()">Volver al inicio</button>
+  </div>`;
+}
+
+function calcVol(ed) {
+  let t = 0;
+  Object.values(ed||{}).forEach(ex => {
+    Object.entries(ex||{}).forEach(([k,v]) => {
+      if (k==='note'||!v||typeof v!=='object') return;
+      t += (parseFloat(v.w)||0) * (parseInt(v.ra)||0);
+    });
+  });
+  return Math.round(t);
+}
+
+function startElapsed() {
+  clearInterval(elapsedIv);
+  elapsedIv = setInterval(() => {
+    const el = document.getElementById('elapsed');
+    if (!el || !sessStart) return;
+    const s = Math.floor((Date.now() - sessStart) / 1000);
+    el.textContent = `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+  }, 1000);
+}
+
+// =====================================================
+// TIMER
+// =====================================================
+function startTimer(secs) {
+  if (timerIv) clearInterval(timerIv);
+  timerSecs = secs;
+  document.getElementById('timer-pill').classList.add('show');
+  updTimer();
+  timerIv = setInterval(() => {
+    timerSecs--;
+    if (timerSecs <= 0) { skipTimer(); return; }
+    updTimer();
+  }, 1000);
+}
+function updTimer() {
+  const el = document.getElementById('timer-num');
+  if (!el) return;
+  const m = Math.floor(timerSecs/60), s = timerSecs%60;
+  el.textContent = `${m}:${String(s).padStart(2,'0')}`;
+  el.className = 'timer-num ' + (timerSecs > 60 ? 'tc-ok' : timerSecs > 20 ? 'tc-warn' : 'tc-end');
+}
+function addTime(s) { timerSecs += s; updTimer(); }
+function skipTimer() { clearInterval(timerIv); document.getElementById('timer-pill').classList.remove('show'); }
+
+// =====================================================
+// PANTALLA: PROGRESO
+// =====================================================
+function renderProg() {
+  const rout = db.routines.find(r => r.active);
+  const sessions = db.sessions;
+  const allEx = rout?.days.flatMap(d => d.exercises) || [];
+  const totVol = sessions.reduce((a,s) => a+s.vol, 0);
+  const avgDur = sessions.length ? Math.round(sessions.reduce((a,s) => a+s.dur,0)/sessions.length) : 0;
+  const avgH   = sessions.length ? Math.round(sessions.reduce((a,s) => a+s.h0, 0)/sessions.length) : 0;
+
+  // Día más frecuente
+  const dmap = {}; sessions.forEach(s => { const d=new Date(s.date).getDay(); dmap[d]=(dmap[d]||0)+1; });
+  const topDay = Object.entries(dmap).sort((a,b)=>b[1]-a[1])[0];
+  const dnames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+  // Fallos totales
+  let fallos = 0;
+  sessions.forEach(s => Object.values(s.ed||{}).forEach(ex =>
+    Object.entries(ex||{}).forEach(([k,v]) => { if(k!=='note'&&v&&v.fallo) fallos++; })
+  ));
+
+  let h = `<div class="prog-wrap">
+    <div class="prog-header"><div class="ph-title">Progreso</div>
+    <div class="ph-sub">${sessions.length} sesiones · ${rout?.name||''}</div></div>
+    <div class="stats-grid">
+      <div class="stat-c"><div class="stat-v">${sessions.length}</div><div class="stat-l">sesiones</div></div>
+      <div class="stat-c"><div class="stat-v">${(totVol/1000).toFixed(1)}t</div><div class="stat-l">volumen total</div></div>
+      <div class="stat-c"><div class="stat-v">${avgDur}min</div><div class="stat-l">duración media</div></div>
+      <div class="stat-c"><div class="stat-v">${avgH>0?avgH+':00':'—'}</div><div class="stat-l">hora promedio</div></div>
+      <div class="stat-c"><div class="stat-v">${topDay?dnames[topDay[0]]:'—'}</div><div class="stat-l">día más frecuente</div></div>
+      <div class="stat-c"><div class="stat-v">${fallos}</div><div class="stat-l">fallos registrados</div></div>
+    </div>
+    <div class="sec-label">Progreso por ejercicio</div>
+    <div class="ex-sel-wrap">
+      <select class="ex-sel" id="ex-sel" onchange="renderChart(this.value)">`;
+  allEx.forEach(ex => { h += `<option value="${ex.id}">${ex.name}</option>`; });
+  h += `</select></div><div class="chart-wrap"><canvas id="pchart"></canvas></div>
+    <div class="sec-label">Últimas sesiones</div>
+    <div class="sess-list">`;
+
+  if (!sessions.length) h += `<div class="empty-state">Todavía no hay sesiones registradas</div>`;
+  sessions.slice(0,20).forEach(s => {
+    const day = rout?.days.find(d => d.id===s.dayId);
+    const pr  = isPR(s);
+    const rpeAvg = avgRPE(s.ed);
+    h += `<div class="sess-c">
+      <div class="sess-date">${fdate(s.date)} · ${s.h0>0?s.h0+':00 hs':''}</div>
+      <div class="sess-row">
+        <div class="sess-inf"><b>${day?.name||'—'}</b> · ${day?.muscle||''}</div>
+        <div class="sess-inf">${s.dur}min</div>
+        <div class="sess-inf">${(s.vol/1000).toFixed(1)}t${pr?'<span class="pr-badge">PR</span>':''}</div>
+        ${rpeAvg?`<div class="sess-inf">RPE <b>${rpeAvg}</b></div>`:''}
+      </div>
+    </div>`;
+  });
+  h += `</div></div>`;
+  document.getElementById('s-prog').innerHTML = h;
+  if (allEx.length) setTimeout(() => renderChart(allEx[0].id), 80);
+}
+
+function renderChart(exId) {
+  /* Cada vez que cambiamos de ejercicio, destruimos la instancia
+     anterior de Chart.js antes de crear una nueva.
+     Si no lo hacemos, Chart.js se queja de que el canvas ya tiene
+     un gráfico y los eventos del mouse se duplican. */
+  if (progChart) { progChart.destroy(); progChart = null; }
+  const data = exHistory(exId);
+  const ctx  = document.getElementById('pchart');
+  if (!ctx || !data.length) return;
+  progChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(d => fdateS(d.date)),
+      datasets: [
+        { label:'Peso máx (kg)', data:data.map(d=>d.wmax), borderColor:'#c8f135', fill:false, tension:.35, pointBackgroundColor:'#c8f135', pointRadius:4, borderWidth:2, yAxisID:'y' },
+        { label:'Volumen (kg)',  data:data.map(d=>d.vol),  borderColor:'#4d8ef0', fill:false, tension:.35, pointBackgroundColor:'#4d8ef0', pointRadius:3, borderWidth:1.5, yAxisID:'y2' }
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins: { legend:{ labels:{ color:'#666', font:{size:10}, boxWidth:10 } } },
+      scales: {
+        x:  { ticks:{color:'#555',font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'} },
+        y:  { ticks:{color:'#999',font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'}, position:'left' },
+        y2: { ticks:{color:'#4d8ef0',font:{size:10}}, grid:{display:false}, position:'right' }
+      }
+    }
+  });
+}
+
+function exHistory(exId) {
+  const res = [];
+  db.sessions.slice().reverse().forEach(s => {
+    const ed = s.ed?.[exId]; if (!ed) return;
+    let wmax=0, vol=0;
+    Object.entries(ed).forEach(([k,v]) => {
+      if (k==='note'||!v||typeof v!=='object') return;
+      const w=parseFloat(v.w)||0, r=parseInt(v.ra)||0;
+      if(w>wmax) wmax=w;
+      vol+=w*r;
+    });
+    res.push({ date:s.date, wmax, vol:Math.round(vol) });
+  });
+  return res;
+}
+
+function isPR(sess) {
+  const prev = db.sessions.filter(s => s.id!==sess.id && new Date(s.date)<new Date(sess.date));
+  if (!prev.length) return false;
+  return sess.vol > Math.max(...prev.map(s=>s.vol), 0);
+}
+
+function avgRPE(ed) {
+  let sum=0, n=0;
+  Object.values(ed||{}).forEach(ex =>
+    Object.entries(ex||{}).forEach(([k,v]) => { if(k!=='note'&&v&&v.rpe){sum+=v.rpe;n++;} })
+  );
+  return n ? Math.round(sum/n*10)/10 : null;
+}
+
+// =====================================================
+// PANTALLA: RUTINAS
+// =====================================================
+function renderRout() {
+  const rout = db.routines.find(r => r.active);
+  let h = `<div class="rout-wrap">
+    <div class="rout-header">
+      <div>
+        <div class="rh-name">Rutinas</div>
+        <div class="rh-sub">${rout?.name||'Sin rutina activa'}</div>
+      </div>
+      <button class="btn-add-ex" onclick="showAddExModal()">+ Ejercicio</button>
+    </div>`;
+
+  if (!rout) { h += '<div class="empty-state">No hay rutina activa</div>'; }
+  else {
+    rout.days.forEach(day => {
+      const isOpen = openDays[day.id] !== false;
+      h += `<div class="day-block">
+        <div class="day-blk-head" onclick="togDay('${day.id}')">
+          <div class="dbh-name">${day.name} · <span style="color:var(--t3);font-weight:400">${day.muscle}</span></div>
+          <div class="dbh-count">${day.exercises.length} ej ${isOpen?'▲':'▼'}</div>
+        </div>`;
+      if (isOpen) {
+        h += '<div class="r-ex-list">';
+        day.exercises.forEach(ex => {
+          h += `<div class="r-ex-row">
+            <div class="r-ex-info">
+              <div class="r-ex-name">${ex.name}${ex.ss?` <span style="font-size:10px;color:var(--blue)">[SS]</span>`:''}</div>
+              <div class="r-ex-detail">${ex.sets}s · ${ex.reps} · ${ex.sw}kg</div>
+            </div>
+            <div class="r-ex-acts">
+              <button class="ib" onclick="editExModal('${day.id}','${ex.id}')">
+                <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              <button class="ib del" onclick="delEx('${day.id}','${ex.id}')">
+                <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </button>
+            </div>
+          </div>`;
+        });
+        h += '</div>';
+      }
+      h += '</div>';
+    });
+  }
+  h += '</div>';
+  document.getElementById('s-rout').innerHTML = h;
+}
+
+function togDay(id) { openDays[id] = openDays[id]===false; renderRout(); }
+
+function showAddExModal() {
+  const rout = db.routines.find(r => r.active); if (!rout) return;
+  const dOpts  = rout.days.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+  const ssOpts = `<option value="">— ninguno —</option>` + rout.days.flatMap(d=>d.exercises).map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  document.getElementById('mc').innerHTML = `
+    <div class="m-title">Nuevo ejercicio</div>
+    <div class="fg"><label class="fl">Día</label><select class="fi" id="f-day">${dOpts}</select></div>
+    <div class="fg"><label class="fl">Nombre del ejercicio</label><input class="fi" id="f-name" placeholder="Ej: Press banca plano"></div>
+    <div class="fg"><label class="fl">Descripción / técnica (opcional)</label><input class="fi" id="f-desc" placeholder="Notas técnicas..."></div>
+    <div class="frow" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="4" min="1"></div>
+      <div class="fg"><label class="fl">Reps</label><input class="fi" id="f-reps" value="10" placeholder="10 o 10/8/6"></div>
+      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="0" min="0" step="2.5"></div>
+    </div>
+    <div class="fg"><label class="fl">Superserie con</label><select class="fi" id="f-ss">${ssOpts}</select></div>
+    <div class="ma"><button class="mb-s" onclick="closeModal()">Cancelar</button><button class="mb-p" onclick="saveNewEx()">Guardar</button></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+
+function saveNewEx() {
+  const rout = db.routines.find(r => r.active);
+  const dayId = document.getElementById('f-day').value;
+  const day = rout?.days.find(d => d.id===dayId); if (!day) return;
+  const name = document.getElementById('f-name').value.trim(); if (!name) return;
+  const ssv = document.getElementById('f-ss').value || null;
+  day.exercises.push({
+    id: 'e'+Date.now(), name,
+    sets: parseInt(document.getElementById('f-sets').value)||4,
+    reps: document.getElementById('f-reps').value||'10',
+    sw:   parseFloat(document.getElementById('f-sw').value)||0,
+    ss:   ssv,
+    desc: document.getElementById('f-desc').value.trim()
+  });
+  sdb(); closeModal(); renderRout();
+}
+
+function editExModal(dayId, exId) {
+  const rout = db.routines.find(r => r.active);
+  const ex = rout?.days.find(d=>d.id===dayId)?.exercises.find(e=>e.id===exId);
+  if (!ex) return;
+  document.getElementById('mc').innerHTML = `
+    <div class="m-title">Editar · ${ex.name}</div>
+    <div class="fg"><label class="fl">Nombre</label><input class="fi" id="f-name" value="${ex.name}"></div>
+    <div class="fg"><label class="fl">Descripción</label><input class="fi" id="f-desc" value="${ex.desc||''}"></div>
+    <div class="frow" style="grid-template-columns:1fr 1fr 1fr">
+      <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="${ex.sets}"></div>
+      <div class="fg"><label class="fl">Reps</label><input class="fi" id="f-reps" value="${ex.reps}"></div>
+      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="${ex.sw}" step="2.5"></div>
+    </div>
+    <div class="ma"><button class="mb-s" onclick="closeModal()">Cancelar</button><button class="mb-p" onclick="saveEditEx('${dayId}','${exId}')">Guardar</button></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+
+function saveEditEx(dId, eId) {
+  const rout = db.routines.find(r => r.active);
+  const ex = rout?.days.find(d=>d.id===dId)?.exercises.find(e=>e.id===eId);
+  if (!ex) return;
+  ex.name = document.getElementById('f-name').value.trim() || ex.name;
+  ex.desc = document.getElementById('f-desc').value.trim();
+  ex.sets = parseInt(document.getElementById('f-sets').value)||ex.sets;
+  ex.reps = document.getElementById('f-reps').value||ex.reps;
+  ex.sw   = parseFloat(document.getElementById('f-sw').value)||0;
+  sdb(); closeModal(); renderRout();
+}
+
+function delEx(dId, eId) {
+  const rout = db.routines.find(r => r.active);
+  const day = rout?.days.find(d => d.id===dId); if (!day) return;
+  if (!confirm('¿Eliminar este ejercicio?')) return;
+  day.exercises = day.exercises.filter(e => e.id!==eId);
+  sdb(); renderRout();
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+// =====================================================
+// UTILIDADES
+// =====================================================
+function isToday(d) { const a=new Date(d),b=new Date(); return a.toDateString()===b.toDateString(); }
+function fdate(d)   { return new Date(d).toLocaleDateString('es-AR',{day:'numeric',month:'short',year:'2-digit'}); }
+function fdateS(d)  { return new Date(d).toLocaleDateString('es-AR',{day:'numeric',month:'numeric'}); }
+
+// Init
+renderTrain();
+</script>
+</body>
+</html>
