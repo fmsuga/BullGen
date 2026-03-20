@@ -401,7 +401,13 @@ html, body {
 .edit-zone-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; cursor: pointer; border: none; background: none; color: var(--t3); font-size: 12px; font-family: var(--sans); width: 100%; border-top: 1px solid var(--line); margin-top: 8px; }
 .day-block { margin: 8px 12px 0; background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .day-blk-head { padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: var(--bg3); }
-.dbh-name { font-size: 14px; font-weight: 600; }
+.dbh-name { font-size: 14px; font-weight: 600; cursor: pointer; }
+.day-name-input {
+  flex: 1; background: var(--bg2); border: 1px solid var(--acc);
+  border-radius: 8px; color: var(--t1); font-size: 14px; font-weight: 600;
+  padding: 4px 10px; font-family: var(--sans);
+}
+.day-name-input:focus { outline: none; }
 .dbh-count { font-size: 11px; color: var(--t3); }
 .r-ex-list { padding: 2px 0; }
 .r-ex-row { padding: 10px 14px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
@@ -1173,10 +1179,16 @@ function renderRout() {
     // Vista de solo lectura: los días con sus ejercicios listados
     rout.days.forEach(day => {
       const isOpen = openDays[day.id] !== false;
+      const dayLabel = day.name + (day.muscle ? ' · ' + day.muscle : '');
       h += `<div class="day-block">
-        <div class="day-blk-head" onclick="togDay('${day.id}')">
-          <div class="dbh-name">${day.name} · <span style="color:var(--t3);font-weight:400">${day.muscle}</span></div>
-          <div class="dbh-count">${day.exercises.length} ej ${isOpen?'▲':'▼'}</div>
+        <div class="day-blk-head">
+          ${editZoneOpen
+            ? `<input class="day-name-input" value="${dayLabel}"
+                onchange="saveDayName('${day.id}', this.value)"
+                onclick="event.stopPropagation()">`
+            : `<div class="dbh-name" onclick="togDay('${day.id}')">${dayLabel}</div>`
+          }
+          <div class="dbh-count" onclick="togDay('${day.id}')" style="cursor:pointer">${day.exercises.length} ej ${isOpen?'▲':'▼'}</div>
         </div>`;
       if (isOpen) {
         h += '<div class="r-ex-list">';
@@ -1240,6 +1252,20 @@ function setActiveRoutine(routId) {
   sdb(); renderRout();
 }
 
+// saveDayName: el input del día acepta "Lunes · Pierna" o "Lunes - Pierna"
+// Lo partimos en name y muscle para mantener la estructura de datos limpia.
+function saveDayName(dayId, val) {
+  const rout = db.routines.find(r => r.active);
+  const day = rout?.days.find(d => d.id===dayId);
+  if (!day) return;
+  // Soporta separadores · o -
+  const parts = val.split(/[·\-]/).map(s => s.trim()).filter(Boolean);
+  day.name   = parts[0] || val.trim();
+  day.muscle = parts[1] || '';
+  sdb();
+  // No re-renderizamos para no cortar el flujo de edición
+}
+
 function togDay(id) { openDays[id] = openDays[id]===false; renderRout(); }
 
 // Modal para crear rutina nueva completa (cada 3 meses)
@@ -1279,21 +1305,75 @@ function saveNewRoutine() {
 
 function showAddExModal(preselectedDayId) {
   const rout = db.routines.find(r => r.active); if (!rout) return;
-  const dOpts  = rout.days.map(d => `<option value="${d.id}" ${d.id===preselectedDayId?'selected':''}>${d.name} · ${d.muscle||'sin nombre'}</option>`).join('');
-  const ssOpts = `<option value="">— ninguno —</option>` + rout.days.flatMap(d=>d.exercises).map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  const dOpts = rout.days.map(d => `<option value="${d.id}" ${d.id===preselectedDayId?'selected':''}>${d.name}${d.muscle?' · '+d.muscle:''}</option>`).join('');
+  // Ejercicios del día preseleccionado para la SS — se actualiza al cambiar el día
+  const preDay = rout.days.find(d => d.id===preselectedDayId) || rout.days[0];
+  const ssOptsFor = (dayId) => {
+    const d = rout.days.find(x => x.id===dayId);
+    return (d?.exercises||[]).map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+  };
   document.getElementById('mc').innerHTML = `
     <div class="m-title">Agregar ejercicio</div>
-    <div class="fg"><label class="fl">Día</label><select class="fi" id="f-day">${dOpts}</select></div>
-    <div class="fg"><label class="fl">Nombre del ejercicio</label><input class="fi" id="f-name" placeholder="Ej: Press banca plano"></div>
-    <div class="fg"><label class="fl">Descripción / técnica (opcional)</label><input class="fi" id="f-desc" placeholder="Notas técnicas..."></div>
+    <div class="fg"><label class="fl">Día</label>
+      <select class="fi" id="f-day" onchange="updateSSOptions(this.value)">${dOpts}</select>
+    </div>
+    <div class="fg"><label class="fl">Nombre del ejercicio</label>
+      <input class="fi" id="f-name" placeholder="Ej: Sentadilla">
+    </div>
+    <div class="fg"><label class="fl">Descripción / técnica (opcional)</label>
+      <input class="fi" id="f-desc" placeholder="Notas técnicas...">
+    </div>
     <div class="frow" style="grid-template-columns:1fr 1fr 1fr">
       <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="4" min="1"></div>
       <div class="fg"><label class="fl">Reps</label><input class="fi" id="f-reps" value="10" placeholder="10 o 10/8/6"></div>
       <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="0" min="0" step="2.5"></div>
     </div>
-    <div class="fg"><label class="fl">Superserie con</label><select class="fi" id="f-ss">${ssOpts}</select></div>
+    <div class="fg">
+      <label class="fl">¿Es superserie?</label>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <button type="button" id="ss-toggle-no"
+          style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--acc);background:var(--acc);color:#000;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--sans)"
+          onclick="toggleSSField(false)">No</button>
+        <button type="button" id="ss-toggle-yes"
+          style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--line2);background:var(--bg3);color:var(--t2);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--sans)"
+          onclick="toggleSSField(true)">Sí</button>
+      </div>
+      <div id="ss-select-wrap" style="display:none">
+        <label class="fl">Ejercicio compañero de SS</label>
+        <select class="fi" id="f-ss">
+          <option value="">— elegir ejercicio —</option>
+          ${ssOptsFor(preDay?.id)}
+        </select>
+        <div style="font-size:11px;color:var(--t3);margin-top:5px;line-height:1.5">
+          Si el compañero todavía no está cargado, guardá este primero y editalo después.
+        </div>
+      </div>
+    </div>
     <div class="ma"><button class="mb-s" onclick="closeModal()">Cancelar</button><button class="mb-p" onclick="saveNewEx()">Guardar</button></div>`;
   document.getElementById('modal').classList.add('open');
+}
+
+function toggleSSField(show) {
+  document.getElementById('ss-select-wrap').style.display = show ? 'block' : 'none';
+  const yes = document.getElementById('ss-toggle-yes');
+  const no  = document.getElementById('ss-toggle-no');
+  if (show) {
+    yes.style.background = 'var(--acc)'; yes.style.color = '#000'; yes.style.borderColor = 'var(--acc)';
+    no.style.background  = 'var(--bg3)'; no.style.color  = 'var(--t2)'; no.style.borderColor = 'var(--line2)';
+  } else {
+    no.style.background  = 'var(--acc)'; no.style.color  = '#000'; no.style.borderColor = 'var(--acc)';
+    yes.style.background = 'var(--bg3)'; yes.style.color = 'var(--t2)'; yes.style.borderColor = 'var(--line2)';
+    document.getElementById('f-ss').value = '';
+  }
+}
+
+function updateSSOptions(dayId) {
+  const rout = db.routines.find(r => r.active);
+  const day = rout?.days.find(d => d.id===dayId);
+  const sel = document.getElementById('f-ss');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— elegir ejercicio —</option>' +
+    (day?.exercises||[]).map(e => `<option value="${e.id}">${e.name}</option>`).join('');
 }
 
 function saveNewEx() {
