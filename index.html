@@ -349,7 +349,7 @@ html, body {
 /* Heatmap */
 .heatmap-wrap { padding: 14px 14px 0; }
 .hm-label { font-size: 10px; color: var(--t3); margin-bottom: 8px; letter-spacing: .06em; text-transform: uppercase; font-weight: 500; }
-.heatmap-grid { display: grid; grid-template-columns: repeat(18, 1fr); gap: 3px; }
+.heatmap-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
 .hm-cell {
   aspect-ratio: 1;
   background: var(--bg3);
@@ -398,6 +398,14 @@ html, body {
 .r3m-track { flex: 1; height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
 .r3m-fill { height: 100%; background: var(--acc); border-radius: 2px; transition: width .6s var(--ease); }
 .r3m-pct { font-family: var(--mono); font-size: 12px; color: var(--acc); white-space: nowrap; }
+.btn-data {
+  flex: 1; padding: 8px 10px;
+  background: var(--bg3); color: var(--t2);
+  border: 1px solid var(--line2); border-radius: 8px;
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  font-family: var(--sans); transition: background .15s, color .15s;
+}
+.btn-data:hover { color: var(--t1); border-color: var(--line3); }
 .edit-zone-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; cursor: pointer; border: none; background: none; color: var(--t3); font-size: 12px; font-family: var(--sans); width: 100%; border-top: 1px solid var(--line); margin-top: 8px; }
 .day-block { margin: 8px 12px 0; background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .day-blk-head { padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: var(--bg3); }
@@ -498,11 +506,61 @@ html, body {
    no se corrompe. Cada sesión guarda una snapshot de lo que pasó.
 ===================================================== */
 const KEY = 'bullgen_v1';
+
+// ── CONFIGURACIÓN API ──
+// Una vez que deployaste el backend en Vercel, reemplazá estos dos valores.
+// Mientras tanto la app funciona 100% con localStorage (modo offline).
+const API_URL = 'https://bullgen-api.vercel.app';
+const API_KEY = 'bullgen_sacado_chupete_2026';
+
+const API_HEADERS = {
+  'Content-Type': 'application/json',
+  'x-api-key': API_KEY
+};
+
 function ldb() {
   try { return JSON.parse(localStorage.getItem(KEY)) || defaultDB(); }
   catch(e) { return defaultDB(); }
 }
 function sdb() { localStorage.setItem(KEY, JSON.stringify(db)); }
+
+// syncFromServer: al arrancar la app, intenta traer los datos del servidor.
+// Si no hay conexión o la API_URL está vacía, usa el localStorage como fallback.
+// Esto permite usar la app sin internet (en el gym sin señal) sin que rompa nada.
+async function syncFromServer() {
+  if (!API_URL) return; // modo offline: API no configurada todavía
+  try {
+    const res  = await fetch(API_URL + '/api/sync', { headers: API_HEADERS });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.routines?.length) db.routines = data.routines;
+    if (data.sessions?.length) db.sessions = data.sessions;
+    sdb(); // actualiza cache local con los datos del servidor
+  } catch (e) {
+    console.warn('Sin conexión con el servidor, usando cache local:', e.message);
+  }
+}
+
+// syncRoutines: guarda rutinas en el servidor en background.
+// fire-and-forget: no bloquea la UI, los errores se ignoran silenciosamente.
+function syncRoutines() {
+  if (!API_URL) return;
+  fetch(API_URL + '/api/routines', {
+    method: 'POST',
+    headers: API_HEADERS,
+    body: JSON.stringify({ routines: db.routines })
+  }).catch(() => {});
+}
+
+// syncSession: manda una sesión al servidor al terminar de entrenar.
+function syncSession(session) {
+  if (!API_URL) return;
+  fetch(API_URL + '/api/sessions', {
+    method: 'POST',
+    headers: API_HEADERS,
+    body: JSON.stringify(session)
+  }).catch(() => {});
+}
 
 function defaultDB() {
   return {
@@ -928,6 +986,7 @@ function showSessionComplete(sess, day) {
   sessStart = null;
   skipTimer();
   sdb();
+  syncSession(saved); // envía al servidor en background
 
   document.getElementById('s-train').innerHTML = `<div class="sc-wrap">
     <div class="sc-icon">🏆</div>
@@ -991,114 +1050,296 @@ function skipTimer() { clearInterval(timerIv); document.getElementById('timer-pi
 // PANTALLA: PROGRESO
 // =====================================================
 function renderProg() {
-  const rout = db.routines.find(r => r.active);
+  const rout     = db.routines.find(r => r.active);
   const sessions = db.sessions;
-  // Ejercicios unicos de todas las rutinas (cross-rutina via normName)
+
+  // Ejercicios unicos de todas las rutinas
   const seen = new Set();
   const allEx = db.routines.flatMap(r => r.days.flatMap(d => d.exercises))
     .filter(ex => { const n=normName(ex.name); if(seen.has(n)) return false; seen.add(n); return true; });
-  const totVol = sessions.reduce((a,s) => a+s.vol, 0);
-  const avgDur = sessions.length ? Math.round(sessions.reduce((a,s) => a+s.dur,0)/sessions.length) : 0;
-  const avgH   = sessions.length ? Math.round(sessions.reduce((a,s) => a+s.h0, 0)/sessions.length) : 0;
 
-  // Día más frecuente
-  const dmap = {}; sessions.forEach(s => { const d=new Date(s.date).getDay(); dmap[d]=(dmap[d]||0)+1; });
-  const topDay = Object.entries(dmap).sort((a,b)=>b[1]-a[1])[0];
-  const dnames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-
-  // Fallos totales
-  let fallos = 0;
-  sessions.forEach(s => Object.values(s.ed||{}).forEach(ex =>
-    Object.entries(ex||{}).forEach(([k,v]) => { if(k!=='note'&&v&&v.fallo) fallos++; })
-  ));
-
-  // ── Racha ──
-  const streak = calcStreak(sessions);
+  // Stats generales
+  const totVol  = sessions.reduce((a,s) => a+s.vol, 0);
+  const avgDur  = sessions.length ? Math.round(sessions.reduce((a,s)=>a+s.dur,0)/sessions.length) : 0;
+  const avgH    = sessions.length ? Math.round(sessions.reduce((a,s)=>a+s.h0, 0)/sessions.length) : 0;
+  const streak  = calcStreak(sessions);
   const lastSess = sessions[0];
-  const lastDate = lastSess ? fdate(lastSess.date) : '—';
+
+  // Series totales y PRs
+  let totalSets = 0, totalPRs = 0;
+  sessions.forEach(s => {
+    Object.values(s.ed||{}).forEach(ex => {
+      Object.entries(ex||{}).forEach(([k,v]) => { if(k!=='note'&&v&&typeof v==='object') totalSets++; });
+    });
+  });
+
+  // Volumen semanal (últimas 8 semanas)
+  const weeklyVol = calcWeeklyVol(sessions, 8);
+
+  // 1RM estimado mejor por ejercicio — fórmula Epley: w*(1+r/30)
+  // Lo calculamos para el primer ejercicio seleccionado
+  const firstEx = allEx[0];
+
+  // Frecuencia por grupo muscular (últimas 4 semanas)
+  const muscleFreq = calcMuscleFreq(sessions, rout, 28);
 
   let h = `<div class="prog-wrap">
-    <div class="prog-header"><div class="ph-title">Progreso</div>
-    <div class="ph-sub">${sessions.length} sesiones · ${rout?.name||''}</div></div>
+    <div class="prog-header">
+      <div class="ph-title">Progreso</div>
+      <div class="ph-sub">${sessions.length} sesiones · ${rout?.name||'sin rutina'}</div>
+    </div>
 
+    <!-- RACHA + HEATMAP -->
     <div class="streak-bar">
-      <div class="streak-num">${streak}</div>
-      <div class="streak-info">
-        <div class="streak-label">dias de racha</div>
-        <div class="streak-sub">ultima sesion: ${lastDate}</div>
+      <div>
+        <div class="streak-num">${streak}</div>
+        <div class="streak-label" style="margin-top:2px">días de racha</div>
+      </div>
+      <div style="flex:1;margin-left:16px">
+        <div class="hm-label" style="margin-bottom:6px">Últimos 2 meses</div>
+        <div class="heatmap-grid" id="heatmap-grid"></div>
       </div>
     </div>
 
-    <div class="heatmap-wrap">
-      <div class="hm-label">Ultimos 126 dias (18 semanas)</div>
-      <div class="heatmap-grid" id="heatmap-grid"></div>
+    <!-- STATS GRILLA -->
+    <div class="stats-grid">
+      <div class="stat-c"><div class="stat-v">${sessions.length}</div><div class="stat-l">Sesiones</div></div>
+      <div class="stat-c"><div class="stat-v">${(totVol/1000).toFixed(1)}t</div><div class="stat-l">Volumen total</div></div>
+      <div class="stat-c"><div class="stat-v">${totalSets}</div><div class="stat-l">Series totales</div></div>
+      <div class="stat-c"><div class="stat-v">${avgDur}min</div><div class="stat-l">Duración media</div></div>
+      <div class="stat-c"><div class="stat-v">${avgH > 0 ? avgH+':00' : '—'}</div><div class="stat-l">Hora promedio</div></div>
+      <div class="stat-c"><div class="stat-v">${streak}</div><div class="stat-l">Racha actual</div></div>
     </div>
 
-    <div class="stats-grid">
-      <div class="stat-c"><div class="stat-v">${sessions.length}</div><div class="stat-l">sesiones</div></div>
-      <div class="stat-c"><div class="stat-v">${(totVol/1000).toFixed(1)}t</div><div class="stat-l">volumen total</div></div>
-      <div class="stat-c"><div class="stat-v">${avgDur}min</div><div class="stat-l">duración media</div></div>
-      <div class="stat-c"><div class="stat-v">${avgH>0?avgH+':00':'—'}</div><div class="stat-l">hora promedio</div></div>
-      <div class="stat-c"><div class="stat-v">${topDay?dnames[topDay[0]]:'—'}</div><div class="stat-l">día más frecuente</div></div>
-      <div class="stat-c"><div class="stat-v">${fallos}</div><div class="stat-l">fallos registrados</div></div>
+    <!-- VOLUMEN SEMANAL -->
+    <div class="sec-label">Volumen semanal (últimas 8 semanas)</div>
+    <div class="chart-wrap" style="height:140px;padding:0 14px 10px">
+      <canvas id="weekly-chart"></canvas>
     </div>
-    <div class="sec-label">Progreso por ejercicio</div>
+
+    <!-- FRECUENCIA POR MÚSCULO -->
+    ${muscleFreq.length ? `
+    <div class="sec-label">Frecuencia por músculo (últimas 4 semanas)</div>
+    <div style="padding:0 14px 14px;display:flex;flex-direction:column;gap:6px">
+      ${muscleFreq.map(m => `
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-size:12px;color:var(--t2);min-width:120px;flex:1">${m.name}</div>
+          <div style="flex:2;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${Math.min(m.pct,100)}%;background:${m.pct>=100?'var(--acc)':m.pct>=50?'var(--blue)':'var(--t3)'};border-radius:3px;transition:width .5s"></div>
+          </div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--t3);min-width:36px;text-align:right">${m.sessions}x</div>
+        </div>`).join('')}
+      <div style="font-size:10px;color:var(--t3);margin-top:4px">verde = 2+ veces/sem · azul = 1 vez · gris = menos</div>
+    </div>` : ''}
+
+    <!-- PROGRESO POR EJERCICIO -->
+    <div class="sec-label">Análisis por ejercicio</div>
     <div class="ex-sel-wrap">
-      <select class="ex-sel" id="ex-sel" onchange="renderChart(this.value)">`;
-  allEx.forEach(ex => { h += `<option value="${ex.id}">${ex.name}</option>`; });
-  h += `</select></div><div class="chart-wrap"><canvas id="pchart"></canvas></div>
-    <div class="sec-label">Últimas sesiones</div>
+      <select class="ex-sel" id="ex-sel" onchange="renderExerciseDetail(this.value)">
+        ${allEx.map(ex => `<option value="${ex.id}">${ex.name}</option>`).join('')}
+      </select>
+    </div>
+    <div id="ex-detail-wrap"></div>
+    <div class="chart-wrap"><canvas id="pchart"></canvas></div>
+
+    <!-- HISTORIAL DE SESIONES -->
+    <div class="sec-label">Historial de sesiones</div>
     <div class="sess-list">`;
 
-  if (!sessions.length) h += `<div class="empty-state">Todavía no hay sesiones registradas</div>`;
-  sessions.slice(0,20).forEach(s => {
-    const day = rout?.days.find(d => d.id===s.dayId);
-    const pr  = isPR(s);
+  if (!sessions.length) {
+    h += `<div class="empty-state">Todavía no hay sesiones registradas</div>`;
+  }
+  sessions.slice(0,30).forEach(s => {
+    const day    = db.routines.flatMap(r=>r.days).find(d => d.id===s.dayId);
+    const pr     = isPR(s);
     const rpeAvg = avgRPE(s.ed);
+    const dname  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][new Date(s.date).getDay()];
     h += `<div class="sess-c">
-      <div class="sess-date">${fdate(s.date)} · ${s.h0>0?s.h0+':00 hs':''}</div>
+      <div class="sess-date">${dname} ${fdate(s.date)} · ${s.h0>0?s.h0+':00 hs':''}</div>
       <div class="sess-row">
-        <div class="sess-inf"><b>${day?.name||'—'}</b> · ${day?.muscle||''}</div>
+        <div class="sess-inf"><b>${day?.name||'—'}</b>${day?.muscle?' · '+day.muscle:''}</div>
         <div class="sess-inf">${s.dur}min</div>
-        <div class="sess-inf">${(s.vol/1000).toFixed(1)}t${pr?'<span class="pr-badge">PR</span>':''}</div>
+        <div class="sess-inf">${(s.vol/1000).toFixed(1)}t${pr?'<span class="pr-badge">PR VOL</span>':''}</div>
         ${rpeAvg?`<div class="sess-inf">RPE <b>${rpeAvg}</b></div>`:''}
       </div>
     </div>`;
   });
-  h += `</div></div>`;
+  h += `
+    <div class="sec-label">Datos</div>
+    <div style="padding:0 14px 30px;display:flex;flex-direction:column;gap:8px">
+      <button onclick="exportJSON()" style="width:100%;padding:13px;background:var(--bg2);color:var(--t1);border:1px solid var(--line2);border-radius:12px;font-size:14px;font-weight:500;cursor:pointer;font-family:var(--sans);text-align:left;display:flex;justify-content:space-between;align-items:center">
+        <span>Exportar backup</span>
+        <span style="font-size:11px;color:var(--t3);font-family:var(--mono)">bullgen_data.json ↓</span>
+      </button>
+      <label style="width:100%;padding:13px;background:var(--bg2);color:var(--t2);border:1px solid var(--line2);border-radius:12px;font-size:14px;cursor:pointer;font-family:var(--sans);display:flex;justify-content:space-between;align-items:center">
+        <span>Importar backup</span>
+        <span style="font-size:11px;color:var(--t3);font-family:var(--mono)">seleccionar .json ↑</span>
+        <input type="file" accept=".json" onchange="importJSON(event)" style="display:none">
+      </label>
+      <div style="font-size:11px;color:var(--t3);line-height:1.6;padding:4px 2px">
+        Exportá regularmente para no perder datos. El archivo contiene toda tu rutina, historial y progreso.
+      </div>
+    </div>
+  </div></div>`;
+
   document.getElementById('s-prog').innerHTML = h;
-  buildHeatmap();
-  if (allEx.length) setTimeout(() => renderChart(allEx[0].id), 80);
+  buildHeatmap(60); // 2 meses = ~60 días
+  renderWeeklyChart(weeklyVol);
+  if (allEx.length) setTimeout(() => renderExerciseDetail(allEx[0].id), 80);
 }
 
-function renderChart(exId) {
-  /* Cada vez que cambiamos de ejercicio, destruimos la instancia
-     anterior de Chart.js antes de crear una nueva.
-     Si no lo hacemos, Chart.js se queja de que el canvas ya tiene
-     un gráfico y los eventos del mouse se duplican. */
-  if (progChart) { progChart.destroy(); progChart = null; }
-  const data = exHistory(exId);
-  const ctx  = document.getElementById('pchart');
-  if (!ctx || !data.length) return;
-  progChart = new Chart(ctx, {
+// Grafico de línea genérico. chartId = canvas id, datasets = array Chart.js
+let charts = {}; // mapa de id → instancia Chart
+function makeLineChart(chartId, labels, datasets) {
+  if (charts[chartId]) { charts[chartId].destroy(); delete charts[chartId]; }
+  const ctx = document.getElementById(chartId);
+  if (!ctx) return;
+  charts[chartId] = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels: data.map(d => fdateS(d.date)),
-      datasets: [
-        { label:'Peso máx (kg)', data:data.map(d=>d.wmax), borderColor:'#c8f135', fill:false, tension:.35, pointBackgroundColor:'#c8f135', pointRadius:4, borderWidth:2, yAxisID:'y' },
-        { label:'Volumen (kg)',  data:data.map(d=>d.vol),  borderColor:'#4d8ef0', fill:false, tension:.35, pointBackgroundColor:'#4d8ef0', pointRadius:3, borderWidth:1.5, yAxisID:'y2' }
-      ]
-    },
+    data: { labels, datasets },
     options: {
       responsive:true, maintainAspectRatio:false,
-      plugins: { legend:{ labels:{ color:'#666', font:{size:10}, boxWidth:10 } } },
+      plugins: { legend:{ labels:{ color:'#555', font:{size:10}, boxWidth:10 } } },
       scales: {
-        x:  { ticks:{color:'#555',font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'} },
-        y:  { ticks:{color:'#999',font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'}, position:'left' },
-        y2: { ticks:{color:'#4d8ef0',font:{size:10}}, grid:{display:false}, position:'right' }
+        x:  { ticks:{color:'#555',font:{size:10}}, grid:{color:'rgba(255,255,255,0.03)'} },
+        y:  { ticks:{color:'#666',font:{size:10}}, grid:{color:'rgba(255,255,255,0.03)'} },
+        y2: { ticks:{color:'#4488ff',font:{size:10}}, grid:{display:false}, position:'right', display: datasets.some(d=>d.yAxisID==='y2') }
       }
     }
   });
+}
+
+// Fórmula Epley para estimar 1RM: w × (1 + reps/30)
+function epley1RM(w, r) { return r <= 0 ? w : Math.round(w * (1 + r/30)); }
+
+// renderExerciseDetail: tarjetas de stats + grafico para un ejercicio
+function renderExerciseDetail(exId) {
+  const data = exHistory(exId);
+  const wrap = document.getElementById('ex-detail-wrap');
+  if (!wrap) return;
+
+  if (!data.length) {
+    wrap.innerHTML = `<div style="padding:10px 14px;font-size:12px;color:var(--t3)">Sin historial para este ejercicio todavía.</div>`;
+    if (charts['pchart']) { charts['pchart'].destroy(); delete charts['pchart']; }
+    return;
+  }
+
+  // Calcular stats
+  const wmaxAll  = Math.max(...data.map(d=>d.wmax));
+  const best1RM  = Math.max(...data.map(d=>d.est1rm||0));
+  const lastVol  = data[data.length-1]?.vol || 0;
+  const prevVol  = data[data.length-2]?.vol || 0;
+  const volDelta = prevVol ? Math.round((lastVol-prevVol)/prevVol*100) : null;
+  const wmaxLast = data[data.length-1]?.wmax || 0;
+  const wmaxPrev = data[data.length-2]?.wmax || 0;
+
+  wrap.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:0 14px 10px">
+    <div class="stat-c">
+      <div class="stat-v">${wmaxAll}kg</div>
+      <div class="stat-l">Récord peso</div>
+    </div>
+    <div class="stat-c">
+      <div class="stat-v">${best1RM}kg</div>
+      <div class="stat-l">1RM estimado</div>
+    </div>
+    <div class="stat-c">
+      <div class="stat-v" style="color:${volDelta==null?'var(--acc)':volDelta>=0?'var(--acc)':'var(--red)'}">${volDelta!=null?(volDelta>=0?'+':'')+volDelta+'%':'—'}</div>
+      <div class="stat-l">Δ volumen</div>
+    </div>
+    <div class="stat-c">
+      <div class="stat-v">${data.length}</div>
+      <div class="stat-l">Sesiones</div>
+    </div>
+    <div class="stat-c">
+      <div class="stat-v" style="color:${wmaxLast>=wmaxPrev?'var(--acc)':'var(--red)'}">${wmaxLast}kg</div>
+      <div class="stat-l">Último peso</div>
+    </div>
+    <div class="stat-c">
+      <div class="stat-v">${wmaxPrev||'—'}${wmaxPrev?'kg':''}</div>
+      <div class="stat-l">Sesión anterior</div>
+    </div>
+  </div>`;
+
+  // Gráfico: 1RM estimado + volumen
+  makeLineChart('pchart',
+    data.map(d => fdateS(d.date)),
+    [
+      { label:'1RM estimado (kg)', data:data.map(d=>d.est1rm||0),
+        borderColor:'#00ff87', fill:false, tension:.35,
+        pointBackgroundColor:'#00ff87', pointRadius:3, borderWidth:2, yAxisID:'y' },
+      { label:'Peso máx (kg)', data:data.map(d=>d.wmax),
+        borderColor:'rgba(0,255,135,0.3)', fill:false, tension:.35,
+        pointRadius:0, borderWidth:1, borderDash:[3,3], yAxisID:'y' },
+      { label:'Volumen (kg)', data:data.map(d=>d.vol),
+        borderColor:'#4488ff', fill:false, tension:.35,
+        pointBackgroundColor:'#4488ff', pointRadius:2, borderWidth:1.5, yAxisID:'y2' }
+    ]
+  );
+}
+
+// renderWeeklyChart: barras de volumen semanal
+function renderWeeklyChart(weeklyVol) {
+  if (charts['weekly-chart']) { charts['weekly-chart'].destroy(); delete charts['weekly-chart']; }
+  const ctx = document.getElementById('weekly-chart');
+  if (!ctx || !weeklyVol.length) return;
+  charts['weekly-chart'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: weeklyVol.map(w => w.label),
+      datasets: [{ label:'Volumen (kg)', data: weeklyVol.map(w=>w.vol),
+        backgroundColor: weeklyVol.map((_,i) => i===weeklyVol.length-1 ? '#00ff87' : 'rgba(0,255,135,0.25)'),
+        borderRadius: 4, borderSkipped: false }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ ticks:{color:'#555',font:{size:9}}, grid:{display:false} },
+        y:{ ticks:{color:'#555',font:{size:9}}, grid:{color:'rgba(255,255,255,0.03)'} }
+      }
+    }
+  });
+}
+
+// calcWeeklyVol: agrupa sesiones por semana ISO
+function calcWeeklyVol(sessions, nWeeks) {
+  const weeks = [];
+  const now = new Date();
+  for (let i = nWeeks-1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i*7);
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - ((d.getDay()+6)%7));
+    monday.setHours(0,0,0,0);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate()+6); sunday.setHours(23,59,59,999);
+    const vol = sessions.filter(s => {
+      const sd = new Date(s.date);
+      return sd >= monday && sd <= sunday;
+    }).reduce((a,s)=>a+s.vol,0);
+    weeks.push({ label: `${monday.getDate()}/${monday.getMonth()+1}`, vol: Math.round(vol) });
+  }
+  return weeks;
+}
+
+// calcMuscleFreq: cuántas veces se entrenó cada músculo en los últimos N días
+function calcMuscleFreq(sessions, rout, days) {
+  if (!rout) return [];
+  const since = new Date(); since.setDate(since.getDate()-days);
+  const recent = sessions.filter(s => new Date(s.date) >= since);
+  const muscles = {};
+  recent.forEach(s => {
+    const day = rout.days.find(d => d.id===s.dayId);
+    if (!day?.muscle) return;
+    // Un día puede tener varios músculos separados por +
+    day.muscle.split(/[+\/,]/).map(m => m.trim()).forEach(m => {
+      if (m) muscles[m] = (muscles[m]||0) + 1;
+    });
+  });
+  const maxFreq = Math.max(...Object.values(muscles), 1);
+  // Para hipertrofia óptima: 2 veces por semana = 8 en 4 semanas
+  return Object.entries(muscles)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([name, count]) => ({ name, sessions:count, pct: Math.round(count/8*100) }));
 }
 
 // exHistory y getBest usan normName para buscar cross-rutina igual que getPrevWeight
@@ -1106,7 +1347,7 @@ function exHistory(exId) {
   const targetName = resolveExName(exId);
   const res = [];
   db.sessions.slice().reverse().forEach(s => {
-    let wmax=0, vol=0, found=false;
+    let wmax=0, vol=0, best1rm=0, found=false;
     for (const [sid, ed] of Object.entries(s.ed||{})) {
       if (!ed||typeof ed!=='object') continue;
       if (resolveExName(sid) !== targetName) continue;
@@ -1116,9 +1357,12 @@ function exHistory(exId) {
         const w=parseFloat(v.w)||0, r=parseInt(v.ra)||0;
         if(w>wmax) wmax=w;
         vol+=w*r;
+        // 1RM estimado con fórmula Epley
+        const rm = epley1RM(w, r);
+        if (rm > best1rm) best1rm = rm;
       });
     }
-    if (found) res.push({ date:s.date, wmax, vol:Math.round(vol) });
+    if (found) res.push({ date:s.date, wmax, vol:Math.round(vol), est1rm:best1rm });
   });
   return res;
 }
@@ -1164,6 +1408,11 @@ function renderRout() {
           ${rout ? `<div class="rh-days-count">${rout.days.length} días · ${rout.days.reduce((a,d)=>a+d.exercises.length,0)} ejercicios</div>` : ''}
         </div>
         <button class="btn-new-rout" onclick="showNewRoutineModal()">Nueva rutina</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn-data" onclick="exportData()">↓ Exportar backup</button>
+        <button class="btn-data" onclick="document.getElementById('import-input').click()">↑ Importar backup</button>
+        <input type="file" id="import-input" accept=".json" style="display:none" onchange="importData(this)">
       </div>
       ${rout?.startDate ? `
       <div class="rout-3m-bar">
@@ -1300,7 +1549,7 @@ function saveNewRoutine() {
   db.routines.forEach(r => r.active = false);
   db.routines.push({ id:'r'+Date.now(), name, startDate, active:true, days });
   editZoneOpen = true; // abrir edición automáticamente para que cargue los ejercicios
-  sdb(); closeModal(); renderRout();
+  sdb(); syncRoutines(); closeModal(); renderRout();
 }
 
 function showAddExModal(preselectedDayId) {
@@ -1419,7 +1668,7 @@ function saveEditEx(dId, eId) {
   ex.sets = parseInt(document.getElementById('f-sets').value)||ex.sets;
   ex.reps = document.getElementById('f-reps').value||ex.reps;
   ex.sw   = parseFloat(document.getElementById('f-sw').value)||0;
-  sdb(); closeModal(); renderRout();
+  sdb(); syncRoutines(); closeModal(); renderRout();
 }
 
 function delEx(dId, eId) {
@@ -1453,11 +1702,110 @@ function skipExercise() {
   renderTrain();
 }
 
+/* exportData: serializa db a JSON y lo descarga como archivo.
+   En iOS Safari esto abre el JSON en el navegador y el usuario
+   lo puede compartir/guardar desde ahí. No hay API de descarga
+   directa en WKWebView, pero funciona bien desde Safari normal. */
+function exportData() {
+  const json     = JSON.stringify(db, null, 2);
+  const blob     = new Blob([json], { type: 'application/json' });
+  const url      = URL.createObjectURL(blob);
+  const date     = new Date().toISOString().split('T')[0];
+  const filename = `bullgen-backup-${date}.json`;
+  const a        = document.createElement('a');
+  a.href         = url;
+  a.download     = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* importData: lee el archivo JSON seleccionado, valida que tenga
+   la estructura esperada, y reemplaza db.
+   IMPORTANTE: hacemos una validación mínima antes de sobreescribir
+   para no romper la app con un archivo corrupto o equivocado. */
+function importData(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      // Validación mínima de estructura
+      if (!parsed.routines || !Array.isArray(parsed.routines)) {
+        alert('El archivo no parece ser un backup válido de BullGen.');
+        return;
+      }
+      if (!confirm(`Importar backup del ${file.name}? Esto reemplazará todos los datos actuales.`)) return;
+      db = parsed;
+      // Aseguramos que tenga sessions y cur aunque el backup sea viejo
+      if (!db.sessions) db.sessions = [];
+      if (!('cur' in db)) db.cur = null;
+      sdb();
+      // Resetear estado de UI
+      trainState.dayId = null;
+      editZoneOpen = false;
+      renderRout();
+      alert('Backup importado correctamente.');
+    } catch(err) {
+      alert('Error al leer el archivo: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  // Limpiar el input para que se pueda volver a importar el mismo archivo
+  input.value = '';
+}
+
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
 
 // =====================================================
 // UTILIDADES
 // =====================================================
+// =====================================================
+// EXPORT / IMPORT JSON
+// =====================================================
+
+// exportJSON: serializa db completo y lo descarga como archivo.
+// El truco es crear un <a> temporal con un blob URL y hacer click programático.
+// En iOS Safari esto abre el archivo en lugar de descargarlo — el usuario
+// puede guardarlo desde ahí a Archivos o Google Drive manualmente.
+function exportJSON() {
+  const data = JSON.stringify(db, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const date = new Date().toISOString().split('T')[0];
+  a.href     = url;
+  a.download = `bullgen_${date}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// importJSON: lee el archivo seleccionado, parsea el JSON y reemplaza db.
+// IMPORTANTE: validamos que tenga la estructura mínima antes de sobrescribir.
+// FileReader es la API del browser para leer archivos locales sin servidor.
+function importJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (!parsed.routines || !parsed.sessions) {
+        alert('El archivo no parece ser un backup válido de BullGen.');
+        return;
+      }
+      if (!confirm(`¿Importar backup? Esto reemplaza todos los datos actuales.\n\nRutinas: ${parsed.routines.length}\nSesiones: ${parsed.sessions.length}`)) return;
+      db = parsed;
+      sdb();
+      alert('Backup importado correctamente.');
+      renderTrain();
+    } catch(err) {
+      alert('Error al leer el archivo: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
 function isToday(d) { const a=new Date(d),b=new Date(); return a.toDateString()===b.toDateString(); }
 
 // calcStreak: cuenta dias consecutivos con al menos una sesion.
@@ -1478,7 +1826,7 @@ function calcStreak(sessions) {
 
 // buildHeatmap: genera 126 celdas (18 semanas) mostrando intensidad por dia.
 // La intensidad se basa en cuantas sesiones hubo ese dia (0-4+ = lvl 0-4).
-function buildHeatmap() {
+function buildHeatmap(nDays=60) {
   const grid = document.getElementById('heatmap-grid');
   if (!grid) return;
   const daySet = {};
@@ -1488,7 +1836,7 @@ function buildHeatmap() {
   });
   const today = new Date();
   const cells = [];
-  for (let i = 125; i >= 0; i--) {
+  for (let i = nDays-1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate()-i);
     const k = d.toDateString();
@@ -1502,8 +1850,9 @@ function buildHeatmap() {
 function fdate(d)   { return new Date(d).toLocaleDateString('es-AR',{day:'numeric',month:'short',year:'2-digit'}); }
 function fdateS(d)  { return new Date(d).toLocaleDateString('es-AR',{day:'numeric',month:'numeric'}); }
 
-// Init
-renderTrain();
+// Init — primero sincroniza con el servidor, después renderiza
+// Si no hay API configurada o no hay internet, renderTrain() se llama igual
+syncFromServer().then(() => renderTrain());
 </script>
 </body>
 </html>
