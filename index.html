@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>GymTrack</title>
+<title>BullGen</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
@@ -445,10 +445,19 @@ html, body {
    PANTALLA DE RUTINAS
 ===================================================== */
 .rout-wrap { padding: 0 0 100px; }
-.rout-header { padding: 24px 20px 16px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: flex-start; }
+.rout-header { padding: 24px 20px 16px; border-bottom: 1px solid var(--line); }
+.rh-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
 .rh-name { font-size: 26px; font-weight: 700; }
-.rh-sub { font-size: 12px; color: var(--t2); margin-top: 4px; }
-.btn-add-ex { padding: 9px 16px; background: var(--acc); color: #000; border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: var(--sans); white-space: nowrap; }
+.rh-date { font-size: 11px; color: var(--t3); margin-top: 4px; font-family: var(--mono); }
+.rh-days-count { font-size: 12px; color: var(--t2); margin-top: 2px; }
+.btn-new-rout { padding: 9px 16px; background: var(--acc); color: #000; border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 700; cursor: pointer; font-family: var(--sans); white-space: nowrap; flex-shrink: 0; }
+.rout-3m-bar { display: flex; align-items: center; gap: 10px; }
+.r3m-label { font-size: 11px; color: var(--t3); white-space: nowrap; }
+.r3m-track { flex: 1; height: 4px; background: var(--line2); border-radius: 2px; overflow: hidden; }
+.r3m-fill { height: 100%; background: var(--acc); border-radius: 2px; transition: width .4s; }
+.r3m-pct { font-family: var(--mono); font-size: 11px; color: var(--acc); white-space: nowrap; }
+.edit-zone-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 14px 20px; cursor: pointer; border: none; background: none; color: var(--t3); font-size: 12px; font-family: var(--sans); width: 100%; border-top: 1px solid var(--line); margin-top: 8px; }
+.edit-zone-toggle:hover { color: var(--t2); }
 .day-block { margin: 10px 14px 0; background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
 .day-blk-head { padding: 13px 14px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: var(--bg3); }
 .dbh-name { font-size: 14px; font-weight: 600; }
@@ -551,7 +560,7 @@ html, body {
    SEPARADAS. Esto es clave: si editás la rutina, el historial
    no se corrompe. Cada sesión guarda una snapshot de lo que pasó.
 ===================================================== */
-const KEY = 'gymtrack_v3';
+const KEY = 'bullgen_v1';
 function ldb() {
   try { return JSON.parse(localStorage.getItem(KEY)) || defaultDB(); }
   catch(e) { return defaultDB(); }
@@ -1146,19 +1155,43 @@ function avgRPE(ed) {
 // =====================================================
 // PANTALLA: RUTINAS
 // =====================================================
+let editZoneOpen = false;
+
 function renderRout() {
   const rout = db.routines.find(r => r.active);
+
+  // Calcular progreso de los 3 meses
+  let pct3m = 0, daysElapsed = 0, daysLeft = 0;
+  if (rout?.startDate) {
+    const start = new Date(rout.startDate);
+    const total = 90;
+    daysElapsed = Math.min(Math.floor((Date.now() - start) / 86400000), total);
+    daysLeft = Math.max(total - daysElapsed, 0);
+    pct3m = Math.round(daysElapsed / total * 100);
+  }
+
   let h = `<div class="rout-wrap">
     <div class="rout-header">
-      <div>
-        <div class="rh-name">Rutinas</div>
-        <div class="rh-sub">${rout?.name||'Sin rutina activa'}</div>
+      <div class="rh-top">
+        <div>
+          <div class="rh-name">${rout?.name || 'Sin rutina activa'}</div>
+          ${rout?.startDate ? `<div class="rh-date">desde ${fdate(rout.startDate)} · ${daysLeft > 0 ? daysLeft + ' días restantes' : 'ciclo completado'}</div>` : ''}
+          ${rout ? `<div class="rh-days-count">${rout.days.length} días · ${rout.days.reduce((a,d)=>a+d.exercises.length,0)} ejercicios</div>` : ''}
+        </div>
+        <button class="btn-new-rout" onclick="showNewRoutineModal()">Nueva rutina</button>
       </div>
-      <button class="btn-add-ex" onclick="showAddExModal()">+ Ejercicio</button>
+      ${rout?.startDate ? `
+      <div class="rout-3m-bar">
+        <span class="r3m-label">Ciclo 3 meses</span>
+        <div class="r3m-track"><div class="r3m-fill" style="width:${pct3m}%"></div></div>
+        <span class="r3m-pct">${pct3m}%</span>
+      </div>` : ''}
     </div>`;
 
-  if (!rout) { h += '<div class="empty-state">No hay rutina activa</div>'; }
-  else {
+  if (!rout) {
+    h += '<div class="empty-state">Creá tu primera rutina con el botón de arriba</div>';
+  } else {
+    // Vista de solo lectura: los días con sus ejercicios listados
     rout.days.forEach(day => {
       const isOpen = openDays[day.id] !== false;
       h += `<div class="day-block">
@@ -1172,35 +1205,81 @@ function renderRout() {
           h += `<div class="r-ex-row">
             <div class="r-ex-info">
               <div class="r-ex-name">${ex.name}${ex.ss?` <span style="font-size:10px;color:var(--blue)">[SS]</span>`:''}</div>
-              <div class="r-ex-detail">${ex.sets}s · ${ex.reps} · ${ex.sw}kg</div>
+              <div class="r-ex-detail">${ex.sets}s · ${ex.reps} · ${ex.sw > 0 ? ex.sw+'kg' : 'pc'}</div>
             </div>
-            <div class="r-ex-acts">
+            ${editZoneOpen ? `<div class="r-ex-acts">
               <button class="ib" onclick="editExModal('${day.id}','${ex.id}')">
                 <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
               <button class="ib del" onclick="delEx('${day.id}','${ex.id}')">
                 <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
               </button>
-            </div>
+            </div>` : ''}
           </div>`;
         });
+        if (editZoneOpen) {
+          h += `<div style="padding:10px 14px;border-top:1px solid var(--line)">
+            <button style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;font-family:var(--sans);padding:0" onclick="showAddExModal('${day.id}')">+ agregar ejercicio a ${day.name}</button>
+          </div>`;
+        }
         h += '</div>';
       }
       h += '</div>';
     });
+
+    // Zona de edición colapsada al fondo
+    h += `<button class="edit-zone-toggle" onclick="editZoneOpen=!editZoneOpen;renderRout()">
+      ${editZoneOpen ? '▲ ocultar edición' : '▼ editar ejercicios'}
+    </button>`;
   }
+
   h += '</div>';
   document.getElementById('s-rout').innerHTML = h;
 }
 
 function togDay(id) { openDays[id] = openDays[id]===false; renderRout(); }
 
-function showAddExModal() {
+// Modal para crear rutina nueva completa (cada 3 meses)
+function showNewRoutineModal() {
+  document.getElementById('mc').innerHTML = `
+    <div class="m-title">Nueva rutina</div>
+    <div class="fg"><label class="fl">Título (ej: "Marzo 2025")</label><input class="fi" id="f-rname" placeholder="Nombre de la rutina"></div>
+    <div class="fg"><label class="fl">Fecha de inicio</label><input class="fi" id="f-rdate" type="date" value="${new Date().toISOString().split('T')[0]}"></div>
+    <div class="fg"><label class="fl">Cantidad de días</label>
+      <select class="fi" id="f-rdays">
+        <option value="3">3 días</option>
+        <option value="4">4 días</option>
+        <option value="5" selected>5 días</option>
+        <option value="6">6 días</option>
+      </select>
+    </div>
+    <p style="font-size:12px;color:var(--t3);margin-bottom:4px;line-height:1.6">Esto crea la estructura vacía. Después cargás los ejercicios día por día desde la vista de edición.</p>
+    <div class="ma"><button class="mb-s" onclick="closeModal()">Cancelar</button><button class="mb-p" onclick="saveNewRoutine()">Crear</button></div>`;
+  document.getElementById('modal').classList.add('open');
+}
+
+function saveNewRoutine() {
+  const name = document.getElementById('f-rname').value.trim();
+  if (!name) return;
+  const nDays = parseInt(document.getElementById('f-rdays').value) || 5;
+  const startDate = document.getElementById('f-rdate').value;
+  const dayNames = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const days = Array.from({length: nDays}, (_, i) => ({
+    id: 'd'+Date.now()+i, name: dayNames[i], muscle: '', exercises: []
+  }));
+  // Desactivar rutina anterior
+  db.routines.forEach(r => r.active = false);
+  db.routines.push({ id:'r'+Date.now(), name, startDate, active:true, days });
+  editZoneOpen = true; // abrir edición automáticamente para que cargue los ejercicios
+  sdb(); closeModal(); renderRout();
+}
+
+function showAddExModal(preselectedDayId) {
   const rout = db.routines.find(r => r.active); if (!rout) return;
-  const dOpts  = rout.days.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+  const dOpts  = rout.days.map(d => `<option value="${d.id}" ${d.id===preselectedDayId?'selected':''}>${d.name} · ${d.muscle||'sin nombre'}</option>`).join('');
   const ssOpts = `<option value="">— ninguno —</option>` + rout.days.flatMap(d=>d.exercises).map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
   document.getElementById('mc').innerHTML = `
-    <div class="m-title">Nuevo ejercicio</div>
+    <div class="m-title">Agregar ejercicio</div>
     <div class="fg"><label class="fl">Día</label><select class="fi" id="f-day">${dOpts}</select></div>
     <div class="fg"><label class="fl">Nombre del ejercicio</label><input class="fi" id="f-name" placeholder="Ej: Press banca plano"></div>
     <div class="fg"><label class="fl">Descripción / técnica (opcional)</label><input class="fi" id="f-desc" placeholder="Notas técnicas..."></div>
