@@ -789,27 +789,42 @@ function buildQueue(day) {
   trainState.dayId = day.id;
 }
 
-/* getPrevWeight: busca en el historial de sesiones el último peso
-   usado para este ejercicio. Si no hay historial, devuelve el
-   peso sugerido de la rutina (sw = suggested weight).
-   Esto implementa exactamente lo que pediste: "el peso de la semana pasada". */
+// normName: clave del sistema cross-rutina.
+// Normaliza nombres para comparar: "Press Banca Plano" == "press banca plano"
+function normName(n) { return (n||'').toLowerCase().trim().replace(/\s+/g,' '); }
+
+// resolveExName: dado un exId busca su nombre en TODAS las rutinas (activas y viejas).
+// Necesario porque las sesiones viejas tienen IDs de rutinas viejas.
+function resolveExName(exId) {
+  for (const r of db.routines)
+    for (const d of r.days) {
+      const ex = d.exercises.find(e => e.id===exId);
+      if (ex) return normName(ex.name);
+    }
+  return null;
+}
+
+// getPrevWeight: busca historial por NOMBRE normalizado, no por ID.
+// Asi "Sentadilla" en la rutina nueva encuentra el historial de la rutina vieja.
+// Los IDs son efimeros, el nombre es la identidad real del ejercicio.
 function getPrevWeight(exId) {
+  const targetName = resolveExName(exId);
   for (const sess of db.sessions) {
-    const ed = sess.ed?.[exId];
-    if (!ed) continue;
-    // Buscamos el peso máximo de esa sesión para ese ejercicio
-    let maxW = 0;
-    Object.entries(ed).forEach(([k, v]) => {
-      if (k === 'note' || !v || typeof v !== 'object') return;
-      const w = parseFloat(v.w) || 0;
-      if (w > maxW) maxW = w;
-    });
-    if (maxW > 0) return { val: maxW, src: 'última vez' };
+    for (const [sessExId, ed] of Object.entries(sess.ed||{})) {
+      if (!ed||typeof ed!=='object') continue;
+      if (resolveExName(sessExId) !== targetName) continue;
+      let maxW = 0;
+      Object.entries(ed).forEach(([k,v]) => {
+        if (k==='note'||!v||typeof v!=='object') return;
+        const w = parseFloat(v.w)||0;
+        if (w>maxW) maxW=w;
+      });
+      if (maxW>0) return { val:maxW, src:'última vez' };
+    }
   }
-  // Fallback: peso sugerido de la rutina
-  const rout = db.routines.find(r => r.active);
-  const ex = rout?.days.flatMap(d => d.exercises).find(e => e.id === exId);
-  return { val: ex?.sw || 0, src: 'sugerido' };
+  const rout = db.routines.find(r=>r.active);
+  const ex = rout?.days.flatMap(d=>d.exercises).find(e=>e.id===exId);
+  return { val: ex?.sw||0, src:'sugerido' };
 }
 
 function countDoneSeries(sess) {
@@ -1037,7 +1052,10 @@ function skipTimer() { clearInterval(timerIv); document.getElementById('timer-pi
 function renderProg() {
   const rout = db.routines.find(r => r.active);
   const sessions = db.sessions;
-  const allEx = rout?.days.flatMap(d => d.exercises) || [];
+  // Ejercicios unicos de todas las rutinas (cross-rutina via normName)
+  const seen = new Set();
+  const allEx = db.routines.flatMap(r => r.days.flatMap(d => d.exercises))
+    .filter(ex => { const n=normName(ex.name); if(seen.has(n)) return false; seen.add(n); return true; });
   const totVol = sessions.reduce((a,s) => a+s.vol, 0);
   const avgDur = sessions.length ? Math.round(sessions.reduce((a,s) => a+s.dur,0)/sessions.length) : 0;
   const avgH   = sessions.length ? Math.round(sessions.reduce((a,s) => a+s.h0, 0)/sessions.length) : 0;
@@ -1122,18 +1140,24 @@ function renderChart(exId) {
   });
 }
 
+// exHistory y getBest usan normName para buscar cross-rutina igual que getPrevWeight
 function exHistory(exId) {
+  const targetName = resolveExName(exId);
   const res = [];
   db.sessions.slice().reverse().forEach(s => {
-    const ed = s.ed?.[exId]; if (!ed) return;
-    let wmax=0, vol=0;
-    Object.entries(ed).forEach(([k,v]) => {
-      if (k==='note'||!v||typeof v!=='object') return;
-      const w=parseFloat(v.w)||0, r=parseInt(v.ra)||0;
-      if(w>wmax) wmax=w;
-      vol+=w*r;
-    });
-    res.push({ date:s.date, wmax, vol:Math.round(vol) });
+    let wmax=0, vol=0, found=false;
+    for (const [sid, ed] of Object.entries(s.ed||{})) {
+      if (!ed||typeof ed!=='object') continue;
+      if (resolveExName(sid) !== targetName) continue;
+      found = true;
+      Object.entries(ed).forEach(([k,v]) => {
+        if (k==='note'||!v||typeof v!=='object') return;
+        const w=parseFloat(v.w)||0, r=parseInt(v.ra)||0;
+        if(w>wmax) wmax=w;
+        vol+=w*r;
+      });
+    }
+    if (found) res.push({ date:s.date, wmax, vol:Math.round(vol) });
   });
   return res;
 }
@@ -1233,8 +1257,32 @@ function renderRout() {
     </button>`;
   }
 
+  // Rutinas anteriores (las no activas)
+  const oldRouts = db.routines.filter(r => !r.active);
+  if (oldRouts.length) {
+    h += `<div style="padding:16px 14px 4px"><div class="sec-label" style="padding:0 0 10px">Rutinas anteriores</div>`;
+    oldRouts.forEach(r => {
+      const totalEx = r.days.reduce((a,d)=>a+d.exercises.length,0);
+      const sessCount = db.sessions.filter(s => r.days.some(d=>d.id===s.dayId)).length;
+      h += `<div style="background:var(--bg2);border:1px solid var(--line);border-radius:var(--r-md);padding:13px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:14px;font-weight:500;color:var(--t1)">${r.name}</div>
+          <div style="font-size:11px;color:var(--t3);margin-top:3px;font-family:var(--mono)">${r.days.length} dias · ${totalEx} ejercicios · ${sessCount} sesiones</div>
+          ${r.startDate ? `<div style="font-size:10px;color:var(--t3);margin-top:2px">desde ${fdate(r.startDate)}</div>` : ''}
+        </div>
+        <button onclick="setActiveRoutine('${r.id}')" style="font-size:11px;color:var(--blue);background:none;border:1px solid rgba(77,142,240,.3);border-radius:6px;padding:5px 10px;cursor:pointer;font-family:var(--sans)">reactivar</button>
+      </div>`;
+    });
+    h += `</div>`;
+  }
+
   h += '</div>';
   document.getElementById('s-rout').innerHTML = h;
+}
+
+function setActiveRoutine(routId) {
+  db.routines.forEach(r => r.active = r.id===routId);
+  sdb(); renderRout();
 }
 
 function togDay(id) { openDays[id] = openDays[id]===false; renderRout(); }
