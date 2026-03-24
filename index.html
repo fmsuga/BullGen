@@ -624,8 +624,9 @@ let sessStart = null;
 // Estado del flujo de entrenamiento
 let trainState = {
   exerciseQueue: [],   // lista de ejercicios del día (expandida: superseries juntas)
-  currentExIdx:  0,    // índice del ejercicio actual
-  currentSerieIdx: 0,  // serie actual dentro del ejercicio
+  currentExIdx:  0,    // índice del bloque actual
+  currentSerieIdx: 0,  // serie actual dentro del bloque
+  currentSubIdx: 0,    // 0 = primer ejercicio del bloque, 1 = segundo (SS)
   dayId: null,
 };
 
@@ -707,57 +708,70 @@ function renderTrainActive(el, rout) {
     <div class="tv-body">`;
 
   const blkTotal = trainState.exerciseQueue.length;
+  const isSuperset = curBlk.length > 1;
+  const subIdx = trainState.currentSubIdx;
+  const ex = curBlk[subIdx] || curBlk[0];
+  const curSerie = trainState.currentSerieIdx;
+  const rA = ex.reps.toString().split('/');
+  const repsObj = rA[curSerie] || rA[rA.length-1];
+  const prevW = getPrevWeight(ex.id);
+
+  // Contador: muestra A/B si es superserie
+  const subLabel = isSuperset ? ` · ${subIdx === 0 ? 'A' : 'B'}` : '';
   h += `<div class="ex-counter-row">
-    <div class="ex-counter">Ejercicio <span class="cur-n">${trainState.currentExIdx + 1}</span> de ${blkTotal}</div>
+    <div class="ex-counter">Bloque <span class="cur-n">${trainState.currentExIdx + 1}</span> de ${blkTotal}${subLabel}</div>
     <button class="btn-skip-ex" onclick="skipExercise()" title="Saltear ejercicio">&#8594;</button>
   </div>`;
 
-  // Renderizamos cada ejercicio del bloque (1 o 2 en superserie)
-  curBlk.forEach((ex, bi) => {
-    const isSecond = bi > 0;
-    const curSerie = trainState.currentSerieIdx;
-    const rA = ex.reps.toString().split('/');
-    const prevW = getPrevWeight(ex.id);
-    const blockClass = isSecond ? 'ss-second-block' : 'current-series-block';
+  // Si es SS, mostrar indicador del compañero de fondo
+  if (isSuperset) {
+    const other = curBlk[subIdx === 0 ? 1 : 0];
+    h += `<div style="display:flex;gap:6px;margin-bottom:10px;align-items:center">
+      <div style="flex:1;padding:8px 12px;background:var(--bg2);border:1px solid ${subIdx===0?'var(--acc)':'var(--line2)'};border-radius:10px;font-size:13px;font-weight:600;color:${subIdx===0?'var(--t1)':'var(--t3)'}">
+        ${curBlk[0].name}
+      </div>
+      <div style="font-size:11px;color:var(--blue);font-weight:700;flex-shrink:0">SS</div>
+      <div style="flex:1;padding:8px 12px;background:var(--bg2);border:1px solid ${subIdx===1?'var(--acc)':'var(--line2)'};border-radius:10px;font-size:13px;font-weight:600;color:${subIdx===1?'var(--t1)':'var(--t3)'}">
+        ${curBlk[1].name}
+      </div>
+    </div>`;
+  }
 
-    if (isSecond) {
-      h += `<div class="ss-divider">superserie</div>`;
-    }
+  // Card del ejercicio activo
+  h += `<div class="current-series-block">
+    <div class="csb-label">Serie ${curSerie + 1} de ${ex.sets}</div>
+    <div class="ex-name-main">${ex.name}</div>`;
 
-    h += `<div class="${blockClass}">
-      <div class="csb-label">Serie ${curSerie + 1} de ${ex.sets}</div>
-      <div class="ex-name-main">${ex.name}</div>`;
+  h += `<div class="series-strip">`;
+  for (let s = 0; s < ex.sets; s++) {
+    const isDone = s < curSerie;
+    const isCur  = s === curSerie;
+    h += `<div class="serie-dot ${isDone?'done':''} ${isCur?'current':''}">${s+1}</div>`;
+  }
+  h += `</div>`;
 
-    // Puntos de series
-    h += `<div class="series-strip">`;
-    for (let s = 0; s < ex.sets; s++) {
-      const isDone = s < curSerie;
-      const isCur  = s === curSerie;
-      h += `<div class="serie-dot ${isDone?'done':''} ${isCur?'current':''}">${s+1}</div>`;
-    }
-    h += `</div>`;
+  h += `<div class="csb-reps-obj">${repsObj}</div>
+    <div class="csb-reps-label">repeticiones</div>
+    <div class="prev-weight-block">
+      <span class="pw-label">Peso</span>
+      <span class="pw-value">${prevW.val}</span>
+      <span class="pw-unit">kg</span>
+      <span class="pw-source">${prevW.src}</span>
+    </div>`;
 
-    // Reps objetivo
-    const repsObj = rA[curSerie] || rA[rA.length-1];
-    h += `<div class="csb-reps-obj">${repsObj}</div>
-      <div class="csb-reps-label">repeticiones</div>
-      <div class="prev-weight-block">
-        <span class="pw-label">Peso</span>
-        <span class="pw-value">${prevW.val}</span>
-        <span class="pw-unit">kg</span>
-        <span class="pw-source">${prevW.src}</span>
-      </div>`;
-
-    if (ex.desc) {
-      h += `<button class="desc-toggle" onclick="toggleDesc('desc-${bi}')">ver técnica</button>
-        <div class="desc-text" id="desc-${bi}">${ex.desc}</div>`;
-    }
-    h += `</div>`; // close block
-  });
+  if (ex.desc) {
+    h += `<button class="desc-toggle" onclick="toggleDesc('ex-desc')">ver técnica</button>
+      <div class="desc-text" id="ex-desc">${ex.desc}</div>`;
+  }
+  h += `</div>`;
 
   h += `</div>`; // tv-body
 
-  const isLast = trainState.currentExIdx >= trainState.exerciseQueue.length - 1 && trainState.currentSerieIdx >= curBlk[0].sets - 1;
+  // isLast: último ejercicio del último bloque, última serie
+  const lastBlkEx = trainState.exerciseQueue[trainState.exerciseQueue.length-1];
+  const isLast = trainState.currentExIdx >= trainState.exerciseQueue.length - 1
+    && subIdx >= curBlk.length - 1
+    && curSerie >= (lastBlkEx?.[lastBlkEx.length-1]?.sets || 1) - 1;
   h += `<div class="tv-footer">
     <button class="btn-rest" onclick="startTimer(120)">⏱ Descanso</button>
     <button class="btn-series-done ${isLast?'last':''}" onclick="openSerieSheet()">
@@ -803,6 +817,7 @@ function buildQueue(day) {
   trainState.exerciseQueue = queue;
   trainState.currentExIdx  = 0;
   trainState.currentSerieIdx = 0;
+  trainState.currentSubIdx = 0;
   trainState.dayId = day.id;
 }
 
@@ -868,7 +883,7 @@ let sheetData = {}; // datos temporales del sheet
 function openSerieSheet() {
   const curBlk = trainState.exerciseQueue[trainState.currentExIdx];
   if (!curBlk) return;
-  const ex = curBlk[0]; // serie principal
+  const ex = curBlk[trainState.currentSubIdx] || curBlk[0]; // ejercicio activo
   const rA = ex.reps.toString().split('/');
   const repsObj = rA[trainState.currentSerieIdx] || rA[rA.length-1];
   const prevW = getPrevWeight(ex.id);
@@ -941,37 +956,52 @@ function closeSheet() {
 }
 
 function confirmSerie() {
-  /* Guardamos los datos de esta serie en db.cur.ed
-     Estructura: db.cur.ed[exId][serieIdx] = { w, ra, fallo, rpe, note } */
   if (!db.cur) return;
   const curBlk = trainState.exerciseQueue[trainState.currentExIdx];
-  const si = trainState.currentSerieIdx;
-  const rA = curBlk[0].reps.toString().split('/');
+  const si  = trainState.currentSerieIdx;
+  const sub = trainState.currentSubIdx;
+  const ex  = curBlk[sub];
+  const rA  = ex.reps.toString().split('/');
 
-  curBlk.forEach(ex => {
-    if (!db.cur.ed[ex.id]) db.cur.ed[ex.id] = {};
-    db.cur.ed[ex.id][si] = {
-      w:     sheetData.w,
-      ra:    sheetData.ra || (rA[si] || rA[rA.length-1]),
-      fallo: sheetData.fallo,
-      rpe:   sheetData.rpe,
-    };
-    if (sheetData.note) db.cur.ed[ex.id].note = sheetData.note;
-  });
+  // Guardar datos de esta serie para este ejercicio
+  if (!db.cur.ed[ex.id]) db.cur.ed[ex.id] = {};
+  db.cur.ed[ex.id][si] = {
+    w:     sheetData.w,
+    ra:    sheetData.ra || (rA[si] || rA[rA.length-1]),
+    fallo: sheetData.fallo,
+    rpe:   sheetData.rpe,
+  };
+  if (sheetData.note) db.cur.ed[ex.id].note = sheetData.note;
 
-  // Avanzar: primero intentamos siguiente serie, luego siguiente ejercicio
-  const maxSeries = curBlk[0].sets;
-  if (si + 1 < maxSeries) {
-    trainState.currentSerieIdx++;
-    startTimer(120);
+  const isSuperset   = curBlk.length > 1;
+  const maxSeries    = ex.sets;
+  const isLastSub    = sub >= curBlk.length - 1;  // terminé el último ejercicio del bloque (B en SS, o el único)
+  const isLastSerie  = si + 1 >= maxSeries;
+
+  if (isSuperset && !isLastSub) {
+    // Estoy en A → ir a B, misma serie, arrancar timer
+    trainState.currentSubIdx = sub + 1;
+    // No arrancamos timer entre A y B — van seguidos sin descanso
+    closeSheet();
+    renderTrain();
+    return;
+  }
+
+  // Terminé el último ejercicio del bloque (B o único)
+  if (!isLastSerie) {
+    // Hay más series → volver a A (subIdx 0), avanzar serie
+    trainState.currentSubIdx = 0;
+    trainState.currentSerieIdx = si + 1;
+    startTimer(120); // descanso entre rondas de la SS
   } else {
-    // Marca el bloque como completado
-    curBlk.forEach(ex => {
+    // Terminé todas las series del bloque → marcar done, siguiente bloque
+    curBlk.forEach(bex => {
       if (!db.cur.done) db.cur.done = [];
-      if (!db.cur.done.includes(ex.id)) db.cur.done.push(ex.id);
+      if (!db.cur.done.includes(bex.id)) db.cur.done.push(bex.id);
     });
     trainState.currentExIdx++;
     trainState.currentSerieIdx = 0;
+    trainState.currentSubIdx   = 0;
     if (trainState.currentExIdx < trainState.exerciseQueue.length) {
       startTimer(120);
     }
@@ -1749,11 +1779,9 @@ function confirmExit() {
 
 // skipExercise: salta el ejercicio actual sin registrar nada
 function skipExercise() {
-  const curBlk = trainState.exerciseQueue[trainState.currentExIdx];
-  if (!curBlk) return;
-  // Marca como saltado (no como done) y avanza
   trainState.currentExIdx++;
   trainState.currentSerieIdx = 0;
+  trainState.currentSubIdx   = 0;
   sdb();
   renderTrain();
 }
