@@ -772,6 +772,21 @@ function renderTrainActive(el, rout) {
 
 function buildQueue(day) {
   const exs = day.exercises;
+
+  // Resolver ssName pendientes: si un ejercicio tiene ssName pero no ss,
+  // buscar el compañero por nombre y linkear ambos
+  exs.forEach(ex => {
+    if (ex.ssName && !ex.ss) {
+      const match = exs.find(e => e.id !== ex.id && normName(e.name) === normName(ex.ssName));
+      if (match) {
+        ex.ss = match.id;
+        if (!match.ss) match.ss = ex.id;
+        ex.ssName = null;
+        sdb(); // guardar el link resuelto
+      }
+    }
+  });
+
   const seen = new Set();
   const queue = [];
   exs.forEach(ex => {
@@ -780,9 +795,9 @@ function buildQueue(day) {
     const pair = ex.ss ? exs.find(e => e.id === ex.ss) : null;
     if (pair) {
       seen.add(pair.id);
-      queue.push([ex, pair]); // bloque de 2
+      queue.push([ex, pair]);
     } else {
-      queue.push([ex]);       // bloque de 1
+      queue.push([ex]);
     }
   });
   trainState.exerciseQueue = queue;
@@ -1554,27 +1569,21 @@ function saveNewRoutine() {
 function showAddExModal(preselectedDayId) {
   const rout = db.routines.find(r => r.active); if (!rout) return;
   const dOpts = rout.days.map(d => `<option value="${d.id}" ${d.id===preselectedDayId?'selected':''}>${d.name}${d.muscle?' · '+d.muscle:''}</option>`).join('');
-  // Ejercicios del día preseleccionado para la SS — se actualiza al cambiar el día
-  const preDay = rout.days.find(d => d.id===preselectedDayId) || rout.days[0];
-  const ssOptsFor = (dayId) => {
-    const d = rout.days.find(x => x.id===dayId);
-    return (d?.exercises||[]).map(e => `<option value="${e.id}">${e.name}</option>`).join('');
-  };
   document.getElementById('mc').innerHTML = `
     <div class="m-title">Agregar ejercicio</div>
     <div class="fg"><label class="fl">Día</label>
-      <select class="fi" id="f-day" onchange="updateSSOptions(this.value)">${dOpts}</select>
+      <select class="fi" id="f-day">${dOpts}</select>
     </div>
     <div class="fg"><label class="fl">Nombre del ejercicio</label>
-      <input class="fi" id="f-name" placeholder="Ej: Sentadilla">
+      <input class="fi" id="f-name" placeholder="Ej: Sentadilla" enterkeyhint="next" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('f-desc').focus()}">
     </div>
     <div class="fg"><label class="fl">Descripción / técnica (opcional)</label>
-      <input class="fi" id="f-desc" placeholder="Notas técnicas...">
+      <input class="fi" id="f-desc" placeholder="Notas técnicas..." enterkeyhint="next" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('f-sets').focus()}">
     </div>
     <div class="frow" style="grid-template-columns:1fr 1fr 1fr">
-      <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="4" min="1" inputmode="numeric" pattern="[0-9]*"></div>
-      <div class="fg"><label class="fl">Reps</label><input class="fi" id="f-reps" value="10" placeholder="10 o 10/8/6"></div>
-      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="0" min="0" step="2.5" inputmode="decimal" pattern="[0-9]*"></div>
+      <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="4" min="1" inputmode="numeric" pattern="[0-9]*" enterkeyhint="next" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('f-reps').focus()}"></div>
+      <div class="fg"><label class="fl">Reps</label><input class="fi" id="f-reps" value="10" placeholder="10 o 10/8/6" enterkeyhint="next" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('f-sw').focus()}"></div>
+      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" placeholder="0" min="0" step="2.5" inputmode="decimal" pattern="[0-9]*" enterkeyhint="done" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('f-sw').blur()}"></div>
     </div>
     <div class="fg">
       <label class="fl">¿Es superserie?</label>
@@ -1586,14 +1595,11 @@ function showAddExModal(preselectedDayId) {
           style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--line2);background:var(--bg3);color:var(--t2);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--sans)"
           onclick="toggleSSField(true)">Sí</button>
       </div>
-      <div id="ss-select-wrap" style="display:none">
-        <label class="fl">Ejercicio compañero de SS</label>
-        <select class="fi" id="f-ss">
-          <option value="">— elegir ejercicio —</option>
-          ${ssOptsFor(preDay?.id)}
-        </select>
+      <div id="ss-input-wrap" style="display:none">
+        <label class="fl">Nombre del ejercicio compañero</label>
+        <input class="fi" id="f-ss-name" placeholder="Ej: Curl martillo" autocomplete="off">
         <div style="font-size:11px;color:var(--t3);margin-top:5px;line-height:1.5">
-          Si el compañero todavía no está cargado, guardá este primero y editalo después.
+          Escribí el nombre exacto como lo cargaste o lo vas a cargar. La app los vincula por nombre.
         </div>
       </div>
     </div>
@@ -1602,26 +1608,19 @@ function showAddExModal(preselectedDayId) {
 }
 
 function toggleSSField(show) {
-  document.getElementById('ss-select-wrap').style.display = show ? 'block' : 'none';
+  document.getElementById('ss-input-wrap').style.display = show ? 'block' : 'none';
   const yes = document.getElementById('ss-toggle-yes');
   const no  = document.getElementById('ss-toggle-no');
   if (show) {
     yes.style.background = 'var(--acc)'; yes.style.color = '#000'; yes.style.borderColor = 'var(--acc)';
     no.style.background  = 'var(--bg3)'; no.style.color  = 'var(--t2)'; no.style.borderColor = 'var(--line2)';
+    setTimeout(() => document.getElementById('f-ss-name')?.focus(), 100);
   } else {
     no.style.background  = 'var(--acc)'; no.style.color  = '#000'; no.style.borderColor = 'var(--acc)';
     yes.style.background = 'var(--bg3)'; yes.style.color = 'var(--t2)'; yes.style.borderColor = 'var(--line2)';
-    document.getElementById('f-ss').value = '';
+    const inp = document.getElementById('f-ss-name');
+    if (inp) inp.value = '';
   }
-}
-
-function updateSSOptions(dayId) {
-  const rout = db.routines.find(r => r.active);
-  const day = rout?.days.find(d => d.id===dayId);
-  const sel = document.getElementById('f-ss');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— elegir ejercicio —</option>' +
-    (day?.exercises||[]).map(e => `<option value="${e.id}">${e.name}</option>`).join('');
 }
 
 function saveNewEx() {
@@ -1629,16 +1628,39 @@ function saveNewEx() {
   const dayId = document.getElementById('f-day').value;
   const day = rout?.days.find(d => d.id===dayId); if (!day) return;
   const name = document.getElementById('f-name').value.trim(); if (!name) return;
-  const ssv = document.getElementById('f-ss').value || null;
+
+  // SS: buscar ejercicio por nombre normalizado en el día actual
+  // Si existe, linkear por ID. Si no existe aún, guardar nombre como ssName para linkear después.
+  const ssNameRaw = document.getElementById('f-ss-name')?.value.trim() || '';
+  let ssId = null, ssName = null;
+  if (ssNameRaw) {
+    const match = day.exercises.find(e => normName(e.name) === normName(ssNameRaw));
+    if (match) {
+      ssId = match.id;
+      // También actualizar el compañero para que apunte de vuelta
+      match.ss = 'e'+Date.now(); // se actualiza abajo con el id real
+    } else {
+      ssName = ssNameRaw; // guardamos el nombre para resolver cuando se cargue el compañero
+    }
+  }
+
+  const newId = 'e'+Date.now();
+  // Si encontramos el compañero, actualizar su ss al id nuevo
+  if (ssId) {
+    const companion = day.exercises.find(e => e.id === ssId);
+    if (companion) companion.ss = newId;
+  }
+
   day.exercises.push({
-    id: 'e'+Date.now(), name,
+    id: newId, name,
     sets: parseInt(document.getElementById('f-sets').value)||4,
     reps: document.getElementById('f-reps').value||'10',
     sw:   parseFloat(document.getElementById('f-sw').value)||0,
-    ss:   ssv,
+    ss:   ssId,          // ID del compañero si ya existe
+    ssName: ssName||null, // nombre pendiente si todavía no está cargado
     desc: document.getElementById('f-desc').value.trim()
   });
-  sdb(); closeModal(); renderRout();
+  sdb(); syncRoutines(); closeModal(); renderRout();
 }
 
 function editExModal(dayId, exId) {
@@ -1652,7 +1674,7 @@ function editExModal(dayId, exId) {
     <div class="frow" style="grid-template-columns:1fr 1fr 1fr">
       <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="${ex.sets}" inputmode="numeric" pattern="[0-9]*"></div>
       <div class="fg"><label class="fl">Reps</label><input class="fi" id="f-reps" value="${ex.reps}"></div>
-      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="${ex.sw}" step="2.5" inputmode="decimal" pattern="[0-9]*"></div>
+      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="${ex.sw||''}" placeholder="0" step="2.5" inputmode="decimal" pattern="[0-9]*"></div>
     </div>
     <div class="ma"><button class="mb-s" onclick="closeModal()">Cancelar</button><button class="mb-p" onclick="saveEditEx('${dayId}','${exId}')">Guardar</button></div>`;
   document.getElementById('modal').classList.add('open');
