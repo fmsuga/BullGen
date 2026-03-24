@@ -1595,11 +1595,25 @@ function showAddExModal(preselectedDayId) {
           style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--line2);background:var(--bg3);color:var(--t2);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--sans)"
           onclick="toggleSSField(true)">Sí</button>
       </div>
-      <div id="ss-input-wrap" style="display:none">
-        <label class="fl">Nombre del ejercicio compañero</label>
-        <input class="fi" id="f-ss-name" placeholder="Ej: Curl martillo" autocomplete="off">
-        <div style="font-size:11px;color:var(--t3);margin-top:5px;line-height:1.5">
-          Escribí el nombre exacto como lo cargaste o lo vas a cargar. La app los vincula por nombre.
+      <div id="ss-input-wrap" style="display:none;border-top:1px solid var(--line2);padding-top:12px;margin-top:4px">
+        <div style="font-size:11px;color:var(--t3);margin-bottom:10px">Datos del segundo ejercicio de la superserie</div>
+        <div class="fg"><label class="fl">Nombre</label>
+          <input class="fi" id="f-ss-name" placeholder="Ej: Curl martillo" autocomplete="off"
+            enterkeyhint="next" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('f-ss-sets').focus()}">
+        </div>
+        <div class="frow" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="fg"><label class="fl">Series</label>
+            <input class="fi" id="f-ss-sets" type="number" placeholder="3" min="1" inputmode="numeric" pattern="[0-9]*"
+              enterkeyhint="next" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('f-ss-reps').focus()}">
+          </div>
+          <div class="fg"><label class="fl">Reps</label>
+            <input class="fi" id="f-ss-reps" placeholder="10" inputmode="numeric"
+              enterkeyhint="next" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('f-ss-sw').focus()}">
+          </div>
+          <div class="fg"><label class="fl">Peso (kg)</label>
+            <input class="fi" id="f-ss-sw" type="number" placeholder="0" min="0" step="2.5" inputmode="decimal" pattern="[0-9]*"
+              enterkeyhint="done" onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('f-ss-sw').blur()}">
+          </div>
         </div>
       </div>
     </div>
@@ -1645,21 +1659,42 @@ function saveNewEx() {
   }
 
   const newId = 'e'+Date.now();
-  // Si encontramos el compañero, actualizar su ss al id nuevo
+  const ssId2 = 'e'+(Date.now()+1);
+
+  // Si encontramos el compañero existente, actualizar su ss al id nuevo
   if (ssId) {
     const companion = day.exercises.find(e => e.id === ssId);
     if (companion) companion.ss = newId;
   }
 
+  // Guardar el primer ejercicio
   day.exercises.push({
     id: newId, name,
     sets: parseInt(document.getElementById('f-sets').value)||4,
     reps: document.getElementById('f-reps').value||'10',
     sw:   parseFloat(document.getElementById('f-sw').value)||0,
-    ss:   ssId,          // ID del compañero si ya existe
-    ssName: ssName||null, // nombre pendiente si todavía no está cargado
+    ss:   ssId || (ssNameRaw && !ssName ? null : ssNameRaw ? ssId2 : null),
+    ssName: ssName||null,
     desc: document.getElementById('f-desc').value.trim()
   });
+
+  // Si hay SS con datos nuevos (compañero no existente), crear el segundo ejercicio también
+  const ss2Name = document.getElementById('f-ss-name')?.value.trim();
+  if (ss2Name && !ssId) {
+    day.exercises.push({
+      id: ssId2, name: ss2Name,
+      sets: parseInt(document.getElementById('f-ss-sets')?.value)||parseInt(document.getElementById('f-sets').value)||4,
+      reps: document.getElementById('f-ss-reps')?.value || document.getElementById('f-reps').value || '10',
+      sw:   parseFloat(document.getElementById('f-ss-sw')?.value)||0,
+      ss:   newId,
+      ssName: null,
+      desc: ''
+    });
+    // Actualizar ss del primero para que apunte al segundo
+    const first = day.exercises.find(e => e.id === newId);
+    if (first) first.ss = ssId2;
+  }
+
   sdb(); syncRoutines(); closeModal(); renderRout();
 }
 
