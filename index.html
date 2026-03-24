@@ -8,6 +8,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>BullGen</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj4KICA8cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjIyIiBmaWxsPSIjMDgwODA4Ii8+CiAgPCEtLSBiYXJyYSBjZW50cmFsIC0tPgogIDxyZWN0IHg9IjMwIiB5PSI0NiIgd2lkdGg9IjQwIiBoZWlnaHQ9IjgiIHJ4PSIzIiBmaWxsPSIjMDBmZjg3Ii8+CiAgPCEtLSBkaXNjbyBpenF1aWVyZG8gZXh0ZXJpb3IgLS0+CiAgPHJlY3QgeD0iMTIiIHk9IjM0IiB3aWR0aD0iMTAiIGhlaWdodD0iMzIiIHJ4PSI0IiBmaWxsPSIjMDBmZjg3Ii8+CiAgPCEtLSBkaXNjbyBpenF1aWVyZG8gaW50ZXJpb3IgLS0+CiAgPHJlY3QgeD0iMjQiIHk9IjM4IiB3aWR0aD0iNiIgaGVpZ2h0PSIyNCIgcng9IjMiIGZpbGw9IiMwMGNjNmEiLz4KICA8IS0tIGRpc2NvIGRlcmVjaG8gaW50ZXJpb3IgLS0+CiAgPHJlY3QgeD0iNzAiIHk9IjM4IiB3aWR0aD0iNiIgaGVpZ2h0PSIyNCIgcng9IjMiIGZpbGw9IiMwMGNjNmEiLz4KICA8IS0tIGRpc2NvIGRlcmVjaG8gZXh0ZXJpb3IgLS0+CiAgPHJlY3QgeD0iNzgiIHk9IjM0IiB3aWR0aD0iMTAiIGhlaWdodD0iMzIiIHJ4PSI0IiBmaWxsPSIjMDBmZjg3Ii8+Cjwvc3ZnPg==">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#080808">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
@@ -862,12 +865,12 @@ function openSerieSheet() {
   h += `<div class="sheet-row">
     <div class="sheet-field">
       <span class="sf-label">Peso usado (kg)</span>
-      <input type="number" class="sf-input" id="sh-w" value="${prevW.val}" min="0" step="2.5"
+      <input type="number" class="sf-input" id="sh-w" inputmode="decimal" value="${prevW.val}" min="0" step="2.5"
         oninput="sheetData.w=parseFloat(this.value)||0">
     </div>
     <div class="sheet-field">
       <span class="sf-label">Reps reales</span>
-      <input type="number" class="sf-input" id="sh-ra" placeholder="${repsObj}" min="0" step="1"
+      <input type="number" class="sf-input" id="sh-ra" inputmode="numeric" placeholder="${repsObj}" min="0" step="1"
         oninput="sheetData.ra=parseInt(this.value)||''">
     </div>
   </div>`;
@@ -1569,9 +1572,9 @@ function showAddExModal(preselectedDayId) {
       <input class="fi" id="f-desc" placeholder="Notas técnicas...">
     </div>
     <div class="frow" style="grid-template-columns:1fr 1fr 1fr">
-      <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="4" min="1"></div>
+      <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="4" min="1" inputmode="numeric" pattern="[0-9]*"></div>
       <div class="fg"><label class="fl">Reps</label><input class="fi" id="f-reps" value="10" placeholder="10 o 10/8/6"></div>
-      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="0" min="0" step="2.5"></div>
+      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="0" min="0" step="2.5" inputmode="decimal" pattern="[0-9]*"></div>
     </div>
     <div class="fg">
       <label class="fl">¿Es superserie?</label>
@@ -1647,9 +1650,9 @@ function editExModal(dayId, exId) {
     <div class="fg"><label class="fl">Nombre</label><input class="fi" id="f-name" value="${ex.name}"></div>
     <div class="fg"><label class="fl">Descripción</label><input class="fi" id="f-desc" value="${ex.desc||''}"></div>
     <div class="frow" style="grid-template-columns:1fr 1fr 1fr">
-      <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="${ex.sets}"></div>
+      <div class="fg"><label class="fl">Series</label><input class="fi" id="f-sets" type="number" value="${ex.sets}" inputmode="numeric" pattern="[0-9]*"></div>
       <div class="fg"><label class="fl">Reps</label><input class="fi" id="f-reps" value="${ex.reps}"></div>
-      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="${ex.sw}" step="2.5"></div>
+      <div class="fg"><label class="fl">Peso (kg)</label><input class="fi" id="f-sw" type="number" value="${ex.sw}" step="2.5" inputmode="decimal" pattern="[0-9]*"></div>
     </div>
     <div class="ma"><button class="mb-s" onclick="closeModal()">Cancelar</button><button class="mb-p" onclick="saveEditEx('${dayId}','${exId}')">Guardar</button></div>`;
   document.getElementById('modal').classList.add('open');
@@ -1846,8 +1849,12 @@ function buildHeatmap(nDays=60) {
 function fdate(d)   { return new Date(d).toLocaleDateString('es-AR',{day:'numeric',month:'short',year:'2-digit'}); }
 function fdateS(d)  { return new Date(d).toLocaleDateString('es-AR',{day:'numeric',month:'numeric'}); }
 
-// Init — primero sincroniza con el servidor, después renderiza
-// Si no hay API configurada o no hay internet, renderTrain() se llama igual
+// Registrar Service Worker para PWA (funcionalidad offline)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
+// Init
 syncFromServer().then(() => renderTrain());
 </script>
 </body>
