@@ -1456,16 +1456,15 @@ function buildGameScreen(rout) {
   const streak = calcStreak(db.sessions);
   const dateStr = new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'});
 
-  // Días entrenados esta semana (lunes a hoy)
+  // Días entrenados esta semana (lunes a hoy), máx 5
   const now = new Date();
   const monday = new Date(now);
   monday.setDate(now.getDate() - ((now.getDay()+6)%7));
   monday.setHours(0,0,0,0);
-  const sessThisWeek = db.sessions.filter(s => new Date(s.date) >= monday).length;
-  const maxLives = 7; // máximo posible en la semana
+  const sessThisWeek = Math.min(db.sessions.filter(s => new Date(s.date) >= monday).length, 5);
   let livesHtml = '';
-  for (let i = 0; i < maxLives; i++) {
-    livesHtml += `<div class="game-life ${i >= sessThisWeek ? 'empty' : ''}">🏋️</div>`;
+  for (let i = 0; i < sessThisWeek; i++) {
+    livesHtml += `<div class="game-life">🏋️</div>`;
   }
 
   let dayCards = '';
