@@ -1451,11 +1451,7 @@ function renderTrain() {
 let gameSelectedDay = null;
 
 function buildGameScreen(rout) {
-  // Auto-seleccionar el primer día no hecho hoy
-  if (!gameSelectedDay) {
-    const notDone = rout.days.find(d => !db.sessions.some(s => s.dayId===d.id && isToday(s.date)));
-    gameSelectedDay = notDone ? notDone.id : rout.days[0]?.id;
-  }
+  // No preseleccionar nada — el usuario elige
 
   const streak = calcStreak(db.sessions);
   const dateStr = new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'});
