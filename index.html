@@ -1511,8 +1511,23 @@ function renderRout() {
       h += '</div>';
     });
 
-    // Zona de edición colapsada al fondo
-    h += `<button class="edit-zone-toggle" onclick="editZoneOpen=!editZoneOpen;renderRout()">
+    // Zona de edición — botón de guardar explícito cuando está abierta
+    if (editZoneOpen) {
+      h += `<div style="padding:12px 14px 4px;border-top:1px solid var(--line)">
+        <button onclick="saveRoutineEdits()" style="
+          width:100%;padding:14px;
+          background:var(--acc);color:#000;
+          border:none;border-radius:12px;
+          font-size:15px;font-weight:700;cursor:pointer;
+          font-family:var(--sans);letter-spacing:.01em;
+          transition:opacity .1s;
+        " id="btn-save-rout">✓ Guardar cambios</button>
+        <p style="font-size:11px;color:var(--t3);text-align:center;margin-top:8px;line-height:1.5">
+          Los cambios se guardan al tocar este botón o al cerrar la edición.
+        </p>
+      </div>`;
+    }
+    h += `<button class="edit-zone-toggle" onclick="editZoneOpen=!editZoneOpen;if(!editZoneOpen)saveRoutineEdits();renderRout()">
       ${editZoneOpen ? '▲ ocultar edición' : '▼ editar ejercicios'}
     </button>`;
   }
@@ -1543,6 +1558,21 @@ function renderRout() {
 function setActiveRoutine(routId) {
   db.routines.forEach(r => r.active = r.id===routId);
   sdb(); renderRout();
+}
+
+// saveRoutineEdits: guarda la rutina activa y muestra feedback visual al usuario.
+// Se llama desde el botón "Guardar cambios" en la zona de edición.
+// También se llama automáticamente cuando se cierra la zona de edición.
+function saveRoutineEdits() {
+  sdb(); syncRoutines();
+  const btn = document.getElementById('btn-save-rout');
+  if (btn) {
+    btn.textContent = '✓ Guardado!';
+    btn.style.background = 'var(--acc2)';
+    setTimeout(() => {
+      if (btn) { btn.textContent = '✓ Guardar cambios'; btn.style.background = 'var(--acc)'; }
+    }, 1800);
+  }
 }
 
 // saveDayName: el input del día acepta "Lunes · Pierna" o "Lunes - Pierna"
@@ -1576,7 +1606,7 @@ function showNewRoutineModal() {
       </select>
     </div>
     <p style="font-size:12px;color:var(--t3);margin-bottom:4px;line-height:1.6">Esto crea la estructura vacía. Después cargás los ejercicios día por día desde la vista de edición.</p>
-    <div class="ma"><button class="mb-s" onclick="closeModal()">Cancelar</button><button class="mb-p" onclick="saveNewRoutine()">Crear</button></div>`;
+    <div class="ma"><button class="mb-s" onclick="closeModal()">Cancelar</button><button class="mb-p" onclick="saveNewRoutine()">💾 Crear y guardar</button></div>`;
   document.getElementById('modal').classList.add('open');
 }
 
@@ -1935,8 +1965,15 @@ function fdate(d)   { return new Date(d).toLocaleDateString('es-AR',{day:'numeri
 function fdateS(d)  { return new Date(d).toLocaleDateString('es-AR',{day:'numeric',month:'numeric'}); }
 
 // Registrar Service Worker para PWA (funcionalidad offline)
+// IMPORTANTE: en GitHub Pages la app vive en /BullGen/, así que el SW
+// debe registrarse con esa ruta base. Sin esto el SW devuelve 404
+// y los datos se pierden al cerrar el navegador (el cache no funciona).
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  // Detectamos la ruta base automáticamente para que funcione tanto en
+  // producción (GitHub Pages) como si alguna vez se mueve a otro subpath.
+  const swPath = new URL('sw.js', document.baseURI).pathname;
+  const swScope = new URL('./', document.baseURI).pathname;
+  navigator.serviceWorker.register(swPath, { scope: swScope }).catch(() => {});
 }
 
 // Init
