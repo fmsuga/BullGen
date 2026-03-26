@@ -449,6 +449,172 @@ html, body {
 .mb-s { padding: 14px 18px; background: var(--bg3); color: var(--t2); border: 1px solid var(--line2); border-radius: 12px; font-size: 15px; cursor: pointer; font-family: var(--sans); }
 
 .empty-state { text-align: center; padding: 48px 20px; color: var(--t3); font-size: 14px; }
+
+/* ── GAME START SCREEN ── */
+.game-screen {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 100%;
+  padding: 24px 20px 40px;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Scanlines overlay */
+.game-screen::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,255,135,.015) 2px,
+    rgba(0,255,135,.015) 4px
+  );
+  pointer-events: none; z-index: 0;
+}
+
+.game-logo {
+  position: relative; z-index: 1;
+  text-align: center; margin-bottom: 32px;
+}
+.game-logo-title {
+  font-family: var(--mono);
+  font-size: 42px; font-weight: 700;
+  letter-spacing: .12em;
+  color: var(--acc);
+  text-shadow: 0 0 20px rgba(0,255,135,.5), 0 0 40px rgba(0,255,135,.2);
+  animation: glowPulse 2.5s ease-in-out infinite;
+}
+@keyframes glowPulse {
+  0%,100% { text-shadow: 0 0 20px rgba(0,255,135,.5), 0 0 40px rgba(0,255,135,.2); }
+  50% { text-shadow: 0 0 30px rgba(0,255,135,.8), 0 0 60px rgba(0,255,135,.4); }
+}
+.game-logo-sub {
+  font-size: 10px; color: var(--t3);
+  letter-spacing: .2em; text-transform: uppercase;
+  font-family: var(--mono); margin-top: 6px;
+}
+
+.game-date {
+  position: relative; z-index: 1;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--t3); letter-spacing: .08em;
+  text-transform: uppercase; margin-bottom: 28px;
+}
+
+/* Vidas */
+.game-lives {
+  position: relative; z-index: 1;
+  display: flex; gap: 10px; margin-bottom: 32px;
+}
+.game-life {
+  font-size: 22px;
+  filter: drop-shadow(0 0 6px rgba(0,255,135,.6));
+  animation: lifePop .4s var(--ease) both;
+}
+.game-life:nth-child(2) { animation-delay: .08s; }
+.game-life:nth-child(3) { animation-delay: .16s; }
+@keyframes lifePop {
+  from { opacity:0; transform: scale(0) translateY(8px); }
+  to { opacity:1; transform: scale(1) translateY(0); }
+}
+
+/* Select de día */
+.game-day-select {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 320px;
+  margin-bottom: 28px;
+}
+.game-day-label {
+  font-size: 9px; color: var(--t3);
+  letter-spacing: .15em; text-transform: uppercase;
+  font-family: var(--mono); margin-bottom: 8px; text-align: center;
+}
+.game-day-cards {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.game-day-btn {
+  width: 100%; padding: 14px 18px;
+  background: var(--bg2);
+  border: 1px solid var(--line3);
+  border-radius: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: border-color .15s, background .15s;
+  font-family: var(--sans);
+}
+.game-day-btn:active { background: var(--bg3); }
+.game-day-btn.done { border-color: var(--acc2); }
+.game-day-btn.selected {
+  border-color: var(--acc);
+  background: rgba(0,255,135,.06);
+  box-shadow: 0 0 0 1px rgba(0,255,135,.2);
+}
+.gdb-left { text-align: left; }
+.gdb-name { font-size: 14px; font-weight: 600; color: var(--t1); }
+.gdb-muscle { font-size: 11px; color: var(--t2); margin-top: 2px; }
+.gdb-right { font-family: var(--mono); font-size: 10px; color: var(--t3); text-align: right; }
+.gdb-done { font-size: 10px; color: var(--acc); font-weight: 700; letter-spacing: .05em; }
+
+/* Botón START */
+.game-start-wrap {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 320px;
+}
+.game-start-btn {
+  width: 100%; padding: 18px;
+  background: var(--acc); color: #000;
+  border: none; border-radius: 14px;
+  font-family: var(--mono); font-size: 18px; font-weight: 700;
+  letter-spacing: .18em; text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(0,255,135,.35), 0 4px 16px rgba(0,0,0,.4);
+  transition: box-shadow .15s, transform .1s;
+  animation: startBlink 1.8s ease-in-out infinite;
+}
+@keyframes startBlink {
+  0%,100% { box-shadow: 0 0 24px rgba(0,255,135,.35), 0 4px 16px rgba(0,0,0,.4); }
+  50% { box-shadow: 0 0 40px rgba(0,255,135,.6), 0 4px 24px rgba(0,0,0,.5); }
+}
+.game-start-btn:active {
+  transform: scale(.97);
+  box-shadow: 0 0 12px rgba(0,255,135,.2);
+  animation: none;
+}
+.game-start-btn:disabled {
+  opacity: .35; cursor: default; animation: none;
+  box-shadow: none;
+}
+.game-insert-coin {
+  text-align: center; margin-top: 10px;
+  font-family: var(--mono); font-size: 9px;
+  color: var(--t3); letter-spacing: .15em;
+  text-transform: uppercase;
+  animation: blinkText 1.2s step-end infinite;
+}
+@keyframes blinkText { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* Hi-score strip */
+.game-hiscore {
+  position: relative; z-index: 1;
+  margin-top: 20px; text-align: center;
+}
+.game-hs-label { font-size: 9px; color: var(--t3); letter-spacing: .15em; text-transform: uppercase; font-family: var(--mono); }
+.game-hs-val { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--acc); margin-top: 2px; }
+.game-hs-sub { font-size: 10px; color: var(--t3); margin-top: 2px; }
+
+/* Corner decorations */
+.game-corner {
+  position: absolute; z-index: 1;
+  font-family: var(--mono); font-size: 9px; color: rgba(0,255,135,.2);
+  letter-spacing: .05em;
+}
+.game-corner.tl { top: 14px; left: 16px; }
+.game-corner.tr { top: 14px; right: 16px; text-align: right; }
+.game-corner.bl { bottom: 70px; left: 16px; }
+.game-corner.br { bottom: 70px; right: 16px; text-align: right; }
+
 </style>
 </head>
 <body>
@@ -527,18 +693,27 @@ function ldb() {
 }
 function sdb() { localStorage.setItem(KEY, JSON.stringify(db)); }
 
-// syncFromServer: al arrancar la app, intenta traer los datos del servidor.
-// Si no hay conexión o la API_URL está vacía, usa el localStorage como fallback.
-// Esto permite usar la app sin internet (en el gym sin señal) sin que rompa nada.
+// syncFromServer: trae los datos del servidor y los mergea inteligentemente.
+// El servidor es la fuente de verdad para rutinas (cross-device).
+// Las sesiones se mergean por id para no perder entrenos offline.
 async function syncFromServer() {
-  if (!API_URL) return; // modo offline: API no configurada todavía
+  if (!API_URL) return;
   try {
     const res  = await fetch(API_URL + '/api/sync', { headers: API_HEADERS });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    if (data.routines?.length) db.routines = data.routines;
-    if (data.sessions?.length) db.sessions = data.sessions;
-    sdb(); // actualiza cache local con los datos del servidor
+    // Rutinas: servidor siempre gana
+    if (data.routines && Array.isArray(data.routines) && data.routines.length) {
+      db.routines = data.routines;
+    }
+    // Sesiones: merge por id — no perder sesiones offline
+    if (data.sessions && Array.isArray(data.sessions) && data.sessions.length) {
+      const serverIds = new Set(data.sessions.map(s => s.id));
+      const localOnly = (db.sessions || []).filter(s => !serverIds.has(s.id));
+      db.sessions = [...data.sessions, ...localOnly];
+      if (localOnly.length) localOnly.forEach(s => syncSession(s));
+    }
+    sdb();
   } catch (e) {
     console.warn('Sin conexión con el servidor, usando cache local:', e.message);
   }
@@ -657,24 +832,101 @@ function renderTrain() {
     return;
   }
 
-  // Sin sesión: selector de días
-  let h = '<div class="day-pick"><div class="dp-header"><div class="dp-title">¿Qué entrenamos?</div>';
-  h += `<div class="dp-sub">${new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}</div></div>`;
+  // Sin sesión: game start screen
+  el.innerHTML = buildGameScreen(rout);
+}
+
+// Estado del día seleccionado en la game screen
+let gameSelectedDay = null;
+
+function buildGameScreen(rout) {
+  // Auto-seleccionar el primer día no hecho hoy, o el primero si todos hechos
+  if (!gameSelectedDay) {
+    const notDone = rout.days.find(d => !db.sessions.some(s => s.dayId===d.id && isToday(s.date)));
+    gameSelectedDay = notDone ? notDone.id : rout.days[0]?.id;
+  }
+
+  const streak = calcStreak(db.sessions);
+  const totalSess = db.sessions.length;
+  const dateStr = new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'});
+
+  let dayCards = '';
   rout.days.forEach(day => {
     const doneToday = db.sessions.some(s => s.dayId===day.id && isToday(s.date));
-    h += `<div class="day-card ${doneToday?'done-today':''}" onclick="startSession('${rout.id}','${day.id}')">
-      <div class="dc-left">
-        <div class="dc-name">${day.name}</div>
-        <div class="dc-muscle">${day.muscle}</div>
-        <div class="dc-count">${day.exercises.length} ejercicios</div>
+    const selected = gameSelectedDay === day.id;
+    dayCards += `<button class="game-day-btn ${doneToday?'done':''} ${selected?'selected':''}"
+      onclick="gameSelectDay('${day.id}')">
+      <div class="gdb-left">
+        <div class="gdb-name">${day.name}</div>
+        ${day.muscle ? `<div class="gdb-muscle">${day.muscle}</div>` : ''}
       </div>
-      <div>
-        ${doneToday ? '<div class="dc-done">✓ HECHO</div>' : '<div class="dc-arrow">›</div>'}
+      <div class="gdb-right">
+        ${doneToday
+          ? '<div class="gdb-done">✓ DONE</div>'
+          : `<div>${day.exercises.length} EX</div>`
+        }
       </div>
-    </div>`;
+    </button>`;
   });
-  h += '</div>';
-  el.innerHTML = h;
+
+  const canStart = gameSelectedDay && rout.days.find(d => d.id === gameSelectedDay)?.exercises.length > 0;
+
+  return `<div class="game-screen">
+    <div class="game-corner tl">P1</div>
+    <div class="game-corner tr">BULLGEN</div>
+    <div class="game-corner bl">STR ${streak} DAYS</div>
+    <div class="game-corner br">${totalSess} PLAYS</div>
+
+    <div class="game-logo">
+      <div class="game-logo-title">BULLGEN</div>
+      <div class="game-logo-sub">gym tracker v1.0</div>
+    </div>
+
+    <div class="game-date">${dateStr}</div>
+
+    <div class="game-lives">
+      <div class="game-life">🏋️</div>
+      <div class="game-life">🏋️</div>
+      <div class="game-life">🏋️</div>
+    </div>
+
+    <div class="game-day-select">
+      <div class="game-day-label">— select stage —</div>
+      <div class="game-day-cards">${dayCards}</div>
+    </div>
+
+    <div class="game-start-wrap">
+      <button class="game-start-btn"
+        ${canStart ? '' : 'disabled'}
+        onclick="gameStartSession()">▶ START</button>
+      <div class="game-insert-coin">${canStart ? 'press start to play' : 'add exercises first'}</div>
+    </div>
+
+    ${streak > 0 ? `<div class="game-hiscore">
+      <div class="game-hs-label">current streak</div>
+      <div class="game-hs-val">${streak}</div>
+      <div class="game-hs-sub">días consecutivos</div>
+    </div>` : ''}
+  </div>`;
+}
+
+function gameSelectDay(dayId) {
+  gameSelectedDay = dayId;
+  renderTrain();
+}
+
+function gameStartSession() {
+  if (!gameSelectedDay) return;
+  const rout = db.routines.find(r => r.active);
+  if (!rout) return;
+  // Flash effect
+  const btn = document.querySelector('.game-start-btn');
+  if (btn) { btn.textContent = '▶ LOADING...'; btn.disabled = true; }
+  setTimeout(() => {
+    const dayId = gameSelectedDay;
+    gameSelectedDay = null;
+    startSession(rout.id, dayId);
+  }, 180);
 }
 
 function renderTrainActive(el, rout) {
